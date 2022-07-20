@@ -1,49 +1,91 @@
-import sourcemaps from 'rollup-plugin-sourcemaps';
+import nodeResolve from '@rollup/plugin-node-resolve';
+import { terser as minify } from 'rollup-plugin-terser';
+import path from 'path';
 
-export const globals = {
-  // Apollo
-  'apollo-client': 'apollo.core',
-  'apollo-cache': 'apolloCache.core',
-  'apollo-link': 'apolloLink.core',
-  'apollo-link-dedup': 'apolloLink.dedup',
-  'apollo-utilities': 'apollo.utilities',
-  'graphql-anywhere': 'graphqlAnywhere',
-  'graphql-anywhere/lib/async': 'graphqlAnywhere.async',
-  'apollo-boost': 'apollo.boost',
-};
+const packageJson = require('../package.json');
+const entryPoints = require('./entryPoints');
 
-export default (name, override = {}) => {
-  const config = Object.assign(
-    {
-      input: 'lib/index.js',
-      //output: merged separately
-      onwarn,
-      external: Object.keys(globals),
-    },
-    override,
-  );
+const distDir = './dist';
 
-  config.output = Object.assign(
-    {
-      file: 'lib/bundle.umd.js',
-      format: 'umd',
-      name,
-      exports: 'named',
-      sourcemap: true,
-      globals,
-    },
-    config.output,
-  );
-
-  config.plugins = config.plugins || [];
-  config.plugins.push(sourcemaps());
-  return config;
-};
-
-function onwarn(message) {
-  const suppressed = ['UNRESOLVED_IMPORT', 'THIS_IS_UNDEFINED'];
-
-  if (!suppressed.find(code => message.code === code)) {
-    return console.warn(message.message);
-  }
+function isExternal(id) {
+  return !(id.startsWith("./") || id.startsWith("../"));
 }
+
+function prepareCJS(input, output) {
+  return {
+    input,
+    external(id) {
+      return isExternal(id);
+    },
+    output: {
+      file: output,
+      format: 'cjs',
+      sourcemap: true,
+      exports: 'named',
+      externalLiveBindings: false,
+    },
+    plugins: [
+      nodeResolve(),
+    ],
+  };
+}
+
+function prepareCJSMinified(input) {
+  return {
+    input,
+    output: {
+      file: input.replace('.js', '.min.js'),
+      format: 'cjs',
+    },
+    plugins: [
+      minify({
+        mangle: {
+          toplevel: true,
+        },
+        compress: {
+          toplevel: true,
+          global_defs: {
+            '@process.env.NODE_ENV': JSON.stringify('production'),
+          },
+        },
+      }),
+    ],
+  };
+}
+
+function prepareBundle({
+  dirs,
+  bundleName = dirs[dirs.length - 1],
+  extensions,
+}) {
+  const dir = path.join(distDir, ...dirs);
+  return {
+    input: `${dir}/index.js`,
+    external(id, parentId) {
+      return isExternal(id) || entryPoints.check(id, parentId);
+    },
+    output: {
+      file: `${dir}/${bundleName}.cjs.js`,
+      format: 'cjs',
+      sourcemap: true,
+      exports: 'named',
+      externalLiveBindings: false,
+    },
+    plugins: [
+      extensions ? nodeResolve({ extensions }) : nodeResolve(),
+    ],
+  };
+}
+
+export default [
+  ...entryPoints.map(prepareBundle),
+  // Convert the ESM entry point to a single CJS bundle.
+  prepareCJS(
+    './dist/index.js',
+    './dist/apollo-client.cjs.js',
+  ),
+  // Minify that single CJS bundle.
+  prepareCJSMinified(
+    './dist/apollo-client.cjs.js',
+  ),
+];

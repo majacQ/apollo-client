@@ -17,6 +17,13 @@ import {
   StoreValue,
   StoreObject,
   argumentsObjectFromField,
+  <<<<<<< read-merge-toReference-helper
+  makeReference,
+} from '../../utilities/graphql/storeUtils';
+
+import { canUseWeakMap } from '../../utilities/common/canUse';
+
+  =======
   Reference,
   isReference,
   getStoreKeyName,
@@ -24,6 +31,7 @@ import {
   compact,
 } from '../../utilities';
 import { IdGetter, ReadMergeModifyContext, MergeInfo } from "./types";
+  >>>>>>> refactor-broadcastQueries-pipeline
 import {
   hasOwn,
   fieldNameFromStoreName,
@@ -124,7 +132,17 @@ export type FieldPolicy<
   merge?: FieldMergeFunction<TExisting, TIncoming> | boolean;
 };
 
+  <<<<<<< read-merge-toReference-helper
+interface FieldFunctionOptions {
+  args: Record<string, any>;
+  parentObject: Readonly<StoreObject>;
+  field: FieldNode;
+  variables?: Record<string, any>;
+  toReference: Policies["toReference"];
+}
+  =======
 export type StorageType = Record<string, any>;
+  >>>>>>> refactor-broadcastQueries-pipeline
 
 function argsFromFieldSpecifier(spec: FieldSpecifier) {
   return spec.args !== void 0 ? spec.args :
@@ -309,6 +327,17 @@ export class Policies {
     if (config.typePolicies) {
       this.addTypePolicies(config.typePolicies);
     }
+  }
+
+  // Bound function that returns a Reference using this.identify.
+  // Provided to read/merge functions as part of their options.
+  public toReference = (
+    object: StoreObject,
+    selectionSet?: SelectionSetNode,
+    fragmentMap?: FragmentMap,
+  ) => {
+    const id = this.identify(object, selectionSet, fragmentMap);
+    return id && makeReference(id);
   }
 
   public identify(
@@ -692,6 +721,26 @@ export class Policies {
       : fieldName + ":" + storeFieldName;
   }
 
+  <<<<<<< read-merge-toReference-helper
+  public readFieldFromStoreObject(
+    parentObject: Readonly<StoreObject>,
+    field: FieldNode,
+    typename = parentObject.__typename,
+    variables?: Record<string, any>,
+  ): StoreValue {
+    const storeFieldName = this.getStoreFieldName(typename, field, variables);
+    const existing = parentObject[storeFieldName];
+    const policy = this.getFieldPolicy(typename, field.name.value, false);
+    if (policy && policy.read) {
+      return policy.read.call(this, existing, {
+        // TODO Avoid recomputing this.
+        args: argumentsObjectFromField(field, variables),
+        parentObject,
+        field,
+        variables,
+        toReference: this.toReference,
+      });
+  =======
   public readField<V = StoreValue>(
     options: ReadFieldOptions,
     context: ReadMergeModifyContext,
@@ -733,11 +782,33 @@ export class Policies {
         read,
         [existing, readOptions],
       ) as SafeReadonly<V>;
+  >>>>>>> refactor-broadcastQueries-pipeline
     }
 
     return existing;
   }
 
+  <<<<<<< read-merge-toReference-helper
+  public getFieldMergeFunction(
+    typename: string,
+    field: FieldNode,
+    variables?: Record<string, any>,
+  ): StoreValueMergeFunction {
+    const policy = this.getFieldPolicy(typename, field.name.value, false);
+    if (policy && policy.merge) {
+      return (
+        existing: StoreValue,
+        incoming: StoreValue,
+        parentObject: Readonly<StoreObject>,
+      ) => policy.merge.call(this, existing, incoming, {
+        // TODO Avoid recomputing this.
+        args: argumentsObjectFromField(field, variables),
+        parentObject,
+        field,
+        variables,
+        toReference: this.toReference,
+      });
+  =======
   public getMergeFunction(
     parentTypename: string | undefined,
     fieldName: string,
@@ -752,6 +823,7 @@ export class Policies {
     if (!merge && childTypename) {
       policy = this.getTypePolicy(childTypename);
       merge = policy && policy.merge;
+  >>>>>>> refactor-broadcastQueries-pipeline
     }
     return merge;
   }

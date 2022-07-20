@@ -1,6 +1,11 @@
 import gql from "graphql-tag";
 
 import { InMemoryCache } from "../inMemoryCache";
+  <<<<<<< read-merge-toReference-helper
+import { StoreValue } from "../../../utilities";
+import { FieldPolicy } from "../policies";
+import { isReference } from "../../../utilities/graphql/storeUtils";
+  =======
 import { ReactiveVar, makeVar } from "../reactiveVars";
 import { Reference, StoreObject, ApolloClient, NetworkStatus, TypedDocumentNode, DocumentNode } from "../../../core";
 import { MissingFieldError } from "../..";
@@ -13,6 +18,7 @@ import { FieldPolicy, StorageType } from "../policies";
 function reverse(s: string) {
   return s.split("").reverse().join("");
 }
+  >>>>>>> refactor-broadcastQueries-pipeline
 
 describe("type policies", function () {
   const bookQuery = gql`
@@ -748,8 +754,34 @@ describe("type policies", function () {
           Author: {
             keyFields: ["name"],
             fields: {
+  <<<<<<< read-merge-toReference-helper
+              todos: {
+                keyArgs: [],
+
+                read(existing: any[], { args, toReference }) {
+                  expect(typeof toReference).toBe("function");
+                  const slice = existing.slice(
+                    args.offset,
+                    args.offset + args.limit,
+                  );
+                  slice.forEach(ref => expect(isReference(ref)).toBe(true));
+                  return slice;
+                },
+
+                merge(existing: any[], incoming: any[], { args, toReference }) {
+                  expect(typeof toReference).toBe("function");
+                  const copy = existing ? existing.slice(0) : [];
+                  const limit = args.offset + args.limit;
+                  for (let i = args.offset; i < limit; ++i) {
+                    copy[i] = incoming[i - args.offset];
+                  }
+                  copy.forEach(todo => expect(isReference(todo)).toBe(true));
+                  return copy;
+                }
+  =======
               writings: {
                 keyArgs: ["a", "b", "type"]
+  >>>>>>> refactor-broadcastQueries-pipeline
               },
             },
           },

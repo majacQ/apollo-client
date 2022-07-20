@@ -1,6 +1,11 @@
 import gql, { disableFragmentWarnings } from 'graphql-tag';
 
+  <<<<<<< read-merge-toReference-helper
+import { Reference, makeReference, isReference } from '../../../utilities/graphql/storeUtils';
+import { defaultNormalizedCacheFactory } from '../entityCache';
+  =======
 import { defaultNormalizedCacheFactory, writeQueryToStore } from './helpers';
+  >>>>>>> refactor-broadcastQueries-pipeline
 import { StoreReader } from '../readFromStore';
 import { StoreWriter } from '../writeToStore';
 import { defaultDataIdFromObject } from '../policies';
@@ -974,6 +979,17 @@ describe('diffing queries against the store', () => {
         typePolicies: {
           Query: {
             fields: {
+  <<<<<<< read-merge-toReference-helper
+              person(_, { args, parentObject: rootQuery, toReference }) {
+                expect(typeof args.id).toBe('number');
+                const ref = toReference({ __typename: 'Person', id: args.id });
+                expect(isReference(ref)).toBe(true);
+                expect(ref).toEqual({
+                  __ref: `Person:${JSON.stringify({ id: args.id })}`,
+                });
+                const found = (rootQuery.people as Reference[]).find(
+                  person => person.__ref === ref.__ref);
+  =======
               person(_, { args, isReference, toReference, readField }) {
                 expect(typeof args!.id).toBe('number');
                 const ref = toReference({ __typename: 'Person', id: args!.id });
@@ -983,6 +999,7 @@ describe('diffing queries against the store', () => {
                 });
                 const found = readField<Reference[]>("people")!.find(
                   person => ref && person.__ref === ref.__ref);
+  >>>>>>> refactor-broadcastQueries-pipeline
                 expect(found).toBeTruthy();
                 return found;
               },

@@ -1240,7 +1240,11 @@ describe('writing to the store', () => {
       const expStore = defaultNormalizedCacheFactory({
         ROOT_QUERY: {
           __typename: 'Query',
+  <<<<<<< read-merge-toReference-helper
+          author: policies.toReference(data.author),
+  =======
           author: makeReference(cache.identify(data.author)!),
+  >>>>>>> refactor-broadcastQueries-pipeline
         },
         [cache.identify(data.author)!]: {
           firstName: data.author.firstName,
@@ -1279,7 +1283,11 @@ describe('writing to the store', () => {
       const expStore = defaultNormalizedCacheFactory({
         ROOT_QUERY: {
           __typename: 'Query',
+  <<<<<<< read-merge-toReference-helper
+          author: policies.toReference(data.author),
+  =======
           author: makeReference(cache.identify(data.author)!),
+  >>>>>>> refactor-broadcastQueries-pipeline
         },
         [cache.identify(data.author)!]: {
           __typename: data.author.__typename,

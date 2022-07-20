@@ -328,6 +328,12 @@ describe('Link interactions', () => {
         typePolicies: {
           Query: {
             fields: {
+  <<<<<<< read-merge-toReference-helper
+              book(_, { parentObject: rootQuery, args, toReference }) {
+                const ref = toReference({ __typename: "Book", id: args.id });
+                expect(ref).toEqual({ __ref: `Book:${args.id}` });
+                const found = (rootQuery.books as Reference[]).find(
+  =======
               book(_, { args, toReference, readField }) {
                 if (!args){
                   throw new Error('arg must never be null');
@@ -340,6 +346,7 @@ describe('Link interactions', () => {
 
                 expect(ref).toEqual({ __ref: `Book:${args.id}` });
                 const found = readField<Reference[]>("books")!.find(
+  >>>>>>> refactor-broadcastQueries-pipeline
                   book => book.__ref === ref.__ref);
                 expect(found).toBeTruthy();
                 return found;

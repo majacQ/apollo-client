@@ -1,2 +1,6 @@
-*.json
-*.snap
+# ignores all files in /docs directory
+/docs/**
+
+# Ignore all mdx & md files:
+*.mdx
+*.md

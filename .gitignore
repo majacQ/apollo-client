@@ -1,5 +1,6 @@
 # fs
 .DS_Store
+.rpt2_cache
 
 # Logs
 logs
@@ -37,22 +38,27 @@ dist
 npm
 !flow-typed/npm
 
+# Unpublished output from @apollo/client build, like bundlesize artifacts
+temp/
+
 # webstorm
 .idea/
 
 # alm editor
 .alm
 
-# yarn
 yarn.lock
-
-# npm
-package-lock.json
 
 # docs
 db.json
 docs.json
 *.log
 docs/public/*
-!docs/public/_redirects
 .idea/
+
+junit.xml
+
+.rpt2_cache
+
+# Local Netlify folder
+.netlify

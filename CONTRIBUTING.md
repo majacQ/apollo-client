@@ -4,7 +4,7 @@ Excited about Apollo and want to make it better? We’re excited too!
 
 Apollo is a community of developers just like you, striving to create the best tools and libraries around GraphQL. We welcome anyone who wants to contribute or provide constructive feedback, no matter the age or level of experience. If you want to help but don't know where to start, let us know, and we'll find something for you.
 
-Oh, and if you haven't already, sign up for the [Apollo Slack](http://www.apollodata.com/#slack).
+Oh, and if you haven't already, join our [community forums](https://community.apollographql.com).
 
 Here are some ways to contribute to the project, from easiest to most difficult:
 
@@ -31,11 +31,11 @@ Creating a good reproduction really helps contributors investigate and resolve y
 
 ### Improving the documentation
 
-Improving the documentation, examples, and other open source content can be the easiest way to contribute to the library. If you see a piece of content that can be better, open a PR with an improvement, no matter how small! If you would like to suggest a big change or major rewrite, we’d love to hear your ideas but please open an issue for discussion before writing the PR.
+Improving the documentation, examples, and other open source content can be the easiest way to contribute to the library. If you see a piece of content that can be better, open a PR with an improvement, no matter how small! If you would like to suggest a big change or major rewrite, we’d love to hear your ideas! Please open a feature request for discussion, over in the [Apollo Client Feature Request repo](https://github.com/apollographql/apollo-feature-requests), before writing the PR.
 
 ### Responding to issues
 
-In addition to reporting issues, a great way to contribute to Apollo is to respond to other peoples' issues and try to identify the problem or help them work around it. If you’re interested in taking a more active role in this process, please go ahead and respond to issues. And don't forget to say "Hi" on Apollo Slack!
+In addition to reporting issues, a great way to contribute to Apollo is to respond to other peoples' issues and try to identify the problem or help them work around it. If you’re interested in taking a more active role in this process, please go ahead and respond to issues. And don't forget to say "Hi" in our [community forums](https://community.apollographql.com)!
 
 ### Small bug fixes
 
@@ -43,15 +43,9 @@ For a small bug fix change (less than 20 lines of code changed), feel free to op
 
 ### Suggesting features
 
-Most of the features in Apollo came from suggestions by you, the community! We welcome any ideas about how to make Apollo  better for your use case. Unless there is overwhelming demand for a feature, it might not get implemented immediately, but please include as much information as possible that will help people have a discussion about your proposal:
+Most of the features in Apollo Client came from suggestions by you, the community! We welcome any ideas about how to make Apollo  better for your use case. Head on over to the [Apollo Client Feature Request repo](https://github.com/apollographql/apollo-feature-requests), and open up a new feature request / discussion issue with your details.
 
-1. **Use case:** What are you trying to accomplish, in specific terms? Often, there might already be a good way to do what you need and a new feature is unnecessary, but it’s hard to know without information about the specific use case.
-2. **Could this be a plugin?** In many cases, a feature might be too niche to be included in the core of a library, and is better implemented as a companion package. If there isn’t a way to extend the library to do what you want, could we add additional plugin APIs? It’s important to make the case for why a feature should be part of the core functionality of the library.
-3. **Is there a workaround?** Is this a more convenient way to do something that is already possible, or is there some blocker that makes a workaround unfeasible?
-
-Feature requests will be labeled as such, and we encourage using GitHub issues as a place to discuss new features and possible implementation designs. Please refrain from submitting a pull request to implement a proposed feature until there is consensus that it should be included. This way, you can avoid putting in work that can’t be merged in.
-
-Once there is a consensus on the need for a new feature, proceed as listed below under “Big PRs”.
+**Note:** Feature requests and non-bug related discussions are no longer managed in this repo's issue tracker. Feature request and/or discussions opened here will be closed.
 
 ## Big PRs
 
@@ -62,7 +56,7 @@ This includes:
 
 For significant changes to a repository, it’s important to settle on a design before starting on the implementation. This way, we can make sure that major improvements get the care and attention they deserve. Since big changes can be risky and might not always get merged, it’s good to reduce the amount of possible wasted effort by agreeing on an implementation design/plan first.
 
-1. **Open an issue.** Open an issue about your bug or feature, as described above.
+1. **Open an issue.** Open an issue about your bug in this repo, or about your feature request in the [Apollo Client Feature Request repo](https://github.com/apollographql/apollo-feature-requests).
 2. **Reach consensus.** Some contributors and community members should reach an agreement that this feature or bug is important, and that someone should work on implementing or fixing it.
 3. **Agree on intended behavior.** On the issue, reach an agreement about the desired behavior. In the case of a bug fix, it should be clear what it means for the bug to be fixed, and in the case of a feature, it should be clear what it will be like for developers to use the new feature.
 4. **Agree on implementation plan.** Write a plan for how this feature or bug fix should be implemented. What modules need to be added or rewritten? Should this be one pull request or multiple incremental improvements? Who is going to do each part?
@@ -80,3 +74,118 @@ It’s important that every piece of code in Apollo packages is reviewed by at l
 4. **No unnecessary or unrelated changes.** PRs shouldn’t come with random formatting changes, especially in unrelated parts of the code. If there is some refactoring that needs to be done, it should be in a separate PR from a bug fix or feature, if possible.
 5. **Code has appropriate comments.** Code should be commented, or written in a clear “self-documenting” way.
 6. **Idiomatic use of the language.** In TypeScript, make sure the typings are specific and correct. In ES2015, make sure to use imports rather than require and const instead of var, etc. Ideally a linter enforces a lot of this, but use your common sense and follow the style of the surrounding code.
+
+## Development
+
+### Building
+
+**Build Apollo Client once:**
+
+```
+npm run build
+```
+
+### Testing
+
+**Run all tests once:**
+
+```
+npm run test
+```
+
+**Run all tests in watch mode:**
+
+```
+npm run test:watch
+```
+
+**Run specific tests:**
+
+Call jest directly making sure to pass in the jest config, and use its `testRegex` option:
+
+```
+jest --config ./config/jest.config.js --testRegex __tests__/useQuery.test.tsx
+```
+
+### Wiring a checkout into an application
+
+It can be useful to link an Apollo Client checkout into an application, to test how Apollo Client development changes impact a real app. We'll use the [Apollo fullstack tutorial application](https://github.com/apollographql/fullstack-tutorial) to demonstrate this.
+
+1) Clone and install Apollo Client.
+
+```
+git clone https://github.com/apollographql/apollo-client.git
+cd apollo-client
+npm i
+cd ..
+```
+
+> From this point forward `[apollo-client-root]` represents the root directory of your Apollo Client checkout (e.g. `/some/path/apollo-client`).
+
+2) Clone and install the fullstack tutorial.
+
+```
+git clone https://github.com/apollographql/fullstack-tutorial.git
+cd fullstack-tutorial
+cd final/server
+npm i
+cd ../client
+npm i
+```
+
+> From this point forward `[fullstack-tutorial-root]` represents the root directory of your Fullstack Tutorial checkout (e.g. `/some/path/fullstack-tutorial`).
+
+3) Link the application's `@apollo/client` package to your Apollo Client checkout's compiled files.
+
+```
+# ... assuming still in [fullstack-tutorial-root]/final/client from step 2
+cd node_modules/@apollo
+rm -Rf ./client
+ln -s [apollo-client-root]/dist client
+```
+
+4) If using React, prevent a duplicate React version lookup error by telling your application to use Apollo Client's React version.
+
+```
+# ... assuming still in [fullstack-tutorial-root]/final/client/node_modules/@apollo from step 3
+cd ..
+rm -Rf ./react ./react-dom
+ln -s [apollo-client-root]/node_modules/react
+ln -s [apollo-client-root]/node_modules/react-dom
+```
+
+5) Start the fullstack tutorial.
+
+Server:
+
+```
+# ... assuming still in [fullstack-tutorial-root]/final/client/node_modules from step 4
+cd ../../server
+npm start
+```
+
+Client:
+
+```
+# ... in a separate terminal window
+cd [fullstack-tutorial-root]/final/client
+npm start
+```
+
+6) Start building Apollo Client and watching for file changes.
+
+```
+# ... in a separate terminal window
+cd [apollo-client-root]
+npm run watch
+```
+
+7) Verify Apollo Client changes show up in the fullstack tutorial.
+
+```
+# ... assuming still in [apollo-client-root] from step 6
+cd src
+echo "console.log('it worked');" >> index.ts
+```
+
+Visit http://localhost:3000/ and open your browsers dev console. After the Apollo Client rebuild finishes, you should see `it worked` in the console.

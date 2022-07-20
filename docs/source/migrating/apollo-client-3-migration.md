@@ -2,18 +2,21 @@
 title: Migrating to Apollo Client 3.0
 ---
 
-This article walks you through migrating your application to Apollo Client 3.0 from previous versions of Apollo Client.
+This article walks you through migrating your application to Apollo Client 3.0 from previous versions of Apollo Client. 
+
+To illustrate the migration process, we've also made this video that uses the example app from our [full-stack tutorial](https://www.apollographql.com/docs/tutorial/introduction/) as a starting point, updating it from Apollo client 2.6 to 3.0: 
+<iframe width="560" height="315" src="https://www.youtube.com/embed/dlKzlksOUtU" frameborder="0" allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
 
 ## What’s new in 3.0
 
 * Apollo Client is now distributed as the `@apollo/client` package (previous versions are distributed as `apollo-client`).
 * The `@apollo/client` package includes both React hooks and GraphQL request handling, which previously required installing separate packages.
 * Apollo Client’s cache (`InMemoryCache`) is more flexible and performant. It now supports garbage collection, storage of both normalized and non-normalized data, and the customization of cached data with new `TypePolicy` and `FieldPolicy` APIs.
-* The update also includes numerous bug fixes and optimizations, as described in the [changelog](https://github.com/apollographql/apollo-client/blob/master/CHANGELOG.md).
+* The update also includes numerous bug fixes and optimizations, as described in the [changelog](https://github.com/apollographql/apollo-client/blob/main/CHANGELOG.md).
 
 ## Installation
 
-> **WARNING:** Apollo Client 3.0 is a major-version release that includes **breaking changes**. If you are updating an existing application to use Apollo Client 3.0, please see the [changelog](https://github.com/apollographql/apollo-client/blob/master/CHANGELOG.md) for details about these changes.
+> **WARNING:** Apollo Client 3.0 is a major-version release that includes **breaking changes**. If you are updating an existing application to use Apollo Client 3.0, please see the [changelog](https://github.com/apollographql/apollo-client/blob/main/CHANGELOG.md) for details about these changes.
 
 Install Apollo Client 3.0 with the following command:
 
@@ -27,6 +30,19 @@ If you’re installing Apollo Client 3.0 in a project that already uses an earli
 
 The `@apollo/client` library includes functionality that previously required installing additional packages. As part of migrating to Apollo Client 3.0, follow the instructions below for each library your application currently uses.
 
+> To simplify the process of converting your `import` declarations from older packages to `@apollo/client`, we provide an automated [transform](https://github.com/apollographql/apollo-client/tree/main/codemods/ac2-to-ac3) based on [`jscodeshift`](https://www.npmjs.com/package/jscodeshift). Note that this transform merely moves `import` specifiers between `import` declarations, without checking for proper usage of the imported values. Since the transform cannot take care of everything, pay close attention to any errors produced by TypeScript or your bundling tools, and be sure to verify all changes made by the transform. A more detailed list of caveats can be found in the [`README.md`](https://github.com/apollographql/apollo-client/tree/main/codemods/ac2-to-ac3#known-limitations).
+
+### @apollo/react-hoc and @apollo/react-components
+
+React Apollo HOC and component functionality is now included in the `@apollo/client` package:
+
+```js
+import { Query, Mutation, Subscription } from '@apollo/client/react/components';
+import { graphql } from '@apollo/client/react/hoc';
+```
+
+As part of migrating, we recommend removing all `@apollo/react-hoc` and `@apollo/react-components` dependencies.
+
 ### @apollo/react-hooks
 
 All `@apollo/react-hooks` functionality is included in the `@apollo/client` package. For example:
@@ -37,19 +53,15 @@ import { ApolloProvider, useQuery, useApolloClient } from '@apollo/client'
 
 As part of migrating, we recommend removing all `@apollo/react-hooks` dependencies.
 
-### @apollo/react-hoc and @apollo/react-components
+### @apollo/react-ssr
 
-These two packages are not included in the `@apollo/client` library. To use them with Apollo Client 3.0, update to their 4.x versions:
-
-```
-npm install @apollo/react-hoc@latest
-npm install @apollo/react-components@latest
-```
+React Apollo’s SSR utilities (like `getDataFromTree`, `getMarkupFromTree`, and `renderToStringWithData`) are included in the `@apollo/client` package. Access them via `@apollo/client/react/ssr`:
 
 ```js
-import { Query, Mutation, Subscription } from '@apollo/react-components';
-import { graphql } from '@apollo/react-hoc';
+import { renderToStringWithData } from '@apollo/client/react/ssr';
 ```
+
+As part of migrating, we recommend removing all `@apollo/react-ssr` dependencies.
 
 ### @apollo/react-testing
 
@@ -61,28 +73,13 @@ import { MockedProvider } from '@apollo/client/testing';
 
 As part of migrating, we recommend removing all `@apollo/react-testing` dependencies.
 
-### react-apollo
-
-`react-apollo` v3 is an umbrella package that re-exports the following packages:
-
-- `@apollo/react-common`
-- `@apollo/react-hooks`
-- `@apollo/react-components`
-- `@apollo/react-hoc`
-- `@apollo/react-ssr`
-- `@apollo/react-testing`
-
-Because `@apollo/client` includes functionality from `@apollo/react-common`, `@apollo/react-hooks` and `@apollo/react-testing`, we've released a v4 version of `react-apollo` that includes only the following:
-
-- `@apollo/react-components`
-- `@apollo/react-hoc`
-- `@apollo/react-ssr`
-
-This version re-exports the remainder of React functionality directly from `@apollo/client`, so if you upgrade to `react-apollo` v4 you should still have access to everything you had in v3. That being said, we recommend removing all `react-apollo` dependencies and directly installing whichever `@apollo/react-*` packages you need.
-
 ### apollo-boost
 
 The Apollo Boost project is now retired, because Apollo Client 3.0 provides a similarly straightforward setup. We recommend removing all `apollo-boost` dependencies and modifying your `ApolloClient` constructor as needed.
+
+### apollo-client
+
+With Apollo Client 3.0, the `apollo-client` package is retired in favor of `@apollo/client`. As part of migrating, remove all `apollo-client` dependencies.
 
 ### apollo-link and apollo-link-http
 
@@ -113,20 +110,17 @@ These options are passed into a new `HttpLink` instance behind the scenes, which
 
 ### apollo-link-*
 
-To continue using `apollo-link` packages besides `apollo-link-http`, replace each existing dependency with the corresponding package under the `@apollo` namespace:
+The separate `apollo-link-*` packages, that were previously maintained in the https://github.com/apollographql/apollo-link repo, have been merged into the Apollo Client project. These links now have their own nested `@apollo/client` entry points. Imports should be updated as follows:
 
-* `@apollo/link-batch-http`
-* `@apollo/link-context`
-* `@apollo/link-error`
-* `@apollo/link-retry`
-* `@apollo/link-schema`
-* `@apollo/link-ws`
+* `apollo-link-batch` is now `@apollo/client/link/batch`
+* `apollo-link-batch-http` is now `@apollo/client/link/batch-http`
+* `apollo-link-context` is now `@apollo/client/link/context`
+* `apollo-link-error` is now `@apollo/client/link/error`
+* `apollo-link-retry` is now `@apollo/client/link/retry`
+* `apollo-link-schema` is now `@apollo/client/link/schema`
+* `apollo-link-ws` is now `@apollo/client/link/ws`
 
-These packages provide the same functionality as their non-`@apollo` counterparts, but they’re updated for compatibility with the `@apollo/client` package.
-
-`apollo-link-rest` has also been updated to use `@apollo/client`, but does not use `@apollo/link-X` naming. It should still be referenced using `apollo-link-rest`, and updated to its `latest` version.
-
-It is important to note that Apollo Client 3 no longer allows `@client` fields to be passed through a Link chain. While Apollo Client 2 made it possible to intercept `@client` fields in Link's like `apollo-link-state` and `@apollo/link-schema`, Apollo Client 3 enforces that `@client` fields are local only. This helps ensure Apollo Client's local state story is easier to understand, and prevents unwanted fields from accidentally ending up in network requests ([PR #5982](https://github.com/apollographql/apollo-client/pull/5982)).
+It is important to note that Apollo Client 3 no longer allows `@client` fields to be passed through a Link chain. While Apollo Client 2 made it possible to intercept `@client` fields in Link's like `apollo-link-state` and `apollo-link-schema`, Apollo Client 3 enforces that `@client` fields are local only. This helps ensure Apollo Client's local state story is easier to understand, and prevents unwanted fields from accidentally ending up in network requests ([PR #5982](https://github.com/apollographql/apollo-client/pull/5982)).
 
 ### graphql-anywhere
 
@@ -135,6 +129,25 @@ The `graphql-anywhere` package’s functionality is no longer included with Apol
 ### graphql-tag
 
 The `@apollo/client` package includes `graphql-tag` as a dependency and re-exports `gql`. To simplify your dependencies, we recommend importing gql from `@apollo/client` and removing all `graphql-tag` dependencies.
+
+### react-apollo
+
+`react-apollo` v3 is an umbrella package that re-exports the following packages:
+
+- `@apollo/react-common`
+- `@apollo/react-hooks`
+- `@apollo/react-components`
+- `@apollo/react-hoc`
+- `@apollo/react-ssr`
+- `@apollo/react-testing`
+
+The `react-apollo` package has been deprecated, and the functionality offered by each of the above packages can now be accessed from `@apollo/client` directly:
+
+- `@apollo/react-hooks` -> now available directly from `@apollo/client`
+- `@apollo/react-components` -> now available from `@apollo/client/react/components`
+- `@apollo/react-hoc` -> now available from `@apollo/client/react/hoc`
+- `@apollo/react-ssr` -> now available from `@apollo/client/react/ssr`
+- `@apollo/react-testing` -> now available from `@apollo/client/testing`
 
 ## Using individual components of Apollo Client 3
 
@@ -193,7 +206,11 @@ The following cache changes are **not** backward compatible. Take them into cons
 
   ```js
     client.writeQuery({
-      query: gql`{ cartItems }`,
+      query: gql`
+        query GetCartItems {
+          cartItems
+        }
+      `,
       data: {
         cartItems: []
       }

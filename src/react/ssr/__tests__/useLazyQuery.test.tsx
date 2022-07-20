@@ -1,3 +1,4 @@
+/** @jest-environment node */
 import React from 'react';
 import { DocumentNode } from 'graphql';
 import gql from 'graphql-tag';
@@ -39,7 +40,7 @@ describe('useLazyQuery Hook SSR', () => {
     const client = new ApolloClient({
       cache: new InMemoryCache(),
       link,
-      ssrMode: true
+      ssrMode: true,
     });
 
     const Component = () => {

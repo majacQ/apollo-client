@@ -41,7 +41,7 @@ const client = new ApolloClient({
 });
 ```
 
-Now it's time to write our first query. Defining a query is straightforward:
+Now it's time to write our first query:
 
 ```js
 import { gql } from '@apollo/client';
@@ -704,4 +704,4 @@ To get you started, here are some example apps:
 
 ## Contributing
 
-Please join us on github [apollographql/apollo-link-rest](https://github.com/apollographql/apollo-link-rest/) and in [Spectrum](https://spectrum.chat/apollo).
+Please join us on github [apollographql/apollo-link-rest](https://github.com/apollographql/apollo-link-rest/) and in the [Apollo GraphQL community forums](https://community.apollographql.com).

@@ -1,3 +1,4 @@
+/** @jest-environment node */
 import React from 'react';
 import PropTypes from 'prop-types';
 import ReactDOM from 'react-dom/server';
@@ -7,7 +8,7 @@ import { DocumentNode } from 'graphql';
 import { ApolloClient } from '../../../../core';
 import { ApolloProvider } from '../../../context';
 import { InMemoryCache as Cache } from '../../../../cache';
-import { mockSingleLink } from '../../../../testing';
+import { itAsync, mockSingleLink } from '../../../../testing';
 import { Query } from '../../../components';
 import { getDataFromTree, getMarkupFromTree } from '../../../ssr';
 import { graphql } from '../../graphql';
@@ -540,7 +541,7 @@ describe('SSR', () => {
       });
     });
 
-    it('should allow for setting state in a component', done => {
+    itAsync('should allow for setting state in a component', (resolve, reject) => {
       const query = gql`
         query user($id: ID) {
           currentUser(id: $id) {
@@ -613,7 +614,7 @@ describe('SSR', () => {
           expect(
             initialState.ROOT_QUERY!['currentUser({"id":"1"})']
           ).toBeTruthy();
-          done();
+          resolve();
         })
         .catch(console.error);
     });
@@ -645,7 +646,7 @@ describe('SSR', () => {
       return getDataFromTree(<Element />);
     });
 
-    it('should allow prepping state from props', done => {
+    itAsync('should allow prepping state from props', (resolve, reject) => {
       const query = gql`
         query user($id: ID) {
           currentUser(id: $id) {
@@ -731,7 +732,7 @@ describe('SSR', () => {
           expect(
             initialState.ROOT_QUERY!['currentUser({"id":"1"})']
           ).toBeTruthy();
-          done();
+          resolve();
         })
         .catch(console.error);
     });

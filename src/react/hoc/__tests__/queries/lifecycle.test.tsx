@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, wait } from '@testing-library/react';
+import { render, waitFor } from '@testing-library/react';
 import gql from 'graphql-tag';
 import { DocumentNode } from 'graphql';
 
@@ -43,27 +43,48 @@ describe('[queries] lifecycle', () => {
       cache: new Cache({ addTypename: false })
     });
 
-    let done = false;
     const Container = graphql<Vars, Data, Vars>(query, {
       options: props => ({
         variables: props,
-        fetchPolicy: count === 0 ? 'cache-and-network' : 'cache-first'
+        fetchPolicy: count === 0 ? 'cache-and-network' : 'cache-first',
+        notifyOnNetworkStatusChange: true,
       })
     })(
       class extends React.Component<ChildProps<Vars, Data, Vars>> {
         componentDidUpdate(prevProps: ChildProps<Vars, Data, Vars>) {
-          const { data } = this.props;
-          // loading is true, but data still there
-          if (count === 1) {
-            if (data!.loading) {
-              expect(data!.allPeople).toBeUndefined();
-            } else {
-              expect(prevProps.data!.loading).toBe(true);
-              expect(data!.allPeople).toEqual(data2.allPeople);
-              done = true;
+          try {
+            const { data } = this.props;
+            switch (count) {
+              case 0:
+                expect(prevProps.data!.loading).toBe(true);
+                expect(prevProps.data!.allPeople).toBe(undefined);
+                expect(data!.loading).toBe(false);
+                expect(data!.variables).toEqual(variables1);
+                expect(data!.allPeople).toEqual(data1.allPeople);
+                break;
+              case 1:
+                expect(data!.loading).toBe(false);
+                expect(data!.variables).toEqual(variables2);
+                expect(data!.allPeople).toEqual(data1.allPeople);
+                break;
+              case 2:
+                expect(data!.loading).toBe(true);
+                expect(data!.variables).toEqual(variables2);
+                expect(data!.allPeople).toBe(undefined);
+                break;
+              case 3:
+                expect(data!.loading).toBe(false);
+                expect(data!.variables).toEqual(variables2);
+                expect(data!.allPeople).toEqual(data2.allPeople);
+                break;
             }
+
+            count++;
+          } catch (err) {
+            reject(err);
           }
         }
+
         render() {
           return null;
         }
@@ -75,7 +96,6 @@ describe('[queries] lifecycle', () => {
 
       componentDidMount() {
         setTimeout(() => {
-          count++;
           this.setState({ first: 2 });
         }, 50);
       }
@@ -91,7 +111,7 @@ describe('[queries] lifecycle', () => {
       </ApolloProvider>
     );
 
-    return wait(() => expect(done).toBeTruthy()).then(resolve, reject);
+    waitFor(() => expect(count).toBe(4)).then(resolve, reject);
   });
 
   itAsync('rebuilds the queries on prop change when using `options`', (resolve, reject) => {
@@ -152,7 +172,7 @@ describe('[queries] lifecycle', () => {
       </ApolloProvider>
     );
 
-    return wait(() => {
+    waitFor(() => {
       expect(firstRun).toBeFalsy();
       expect(isDone).toBeTruthy();
     }).then(resolve, reject);
@@ -189,24 +209,48 @@ describe('[queries] lifecycle', () => {
       cache: new Cache({ addTypename: false })
     });
 
-    let done = false;
     const Container = graphql<Vars, Data, Vars>(query, {
-      options: props => ({ variables: props })
+      options: props => ({
+        variables: props,
+        notifyOnNetworkStatusChange: true,
+      }),
     })(
       class extends React.Component<ChildProps<Vars, Data, Vars>> {
         componentDidUpdate(prevProps: ChildProps<Vars, Data, Vars>) {
-          const { data } = this.props;
-          // loading is true, but data still there
-          if (count === 1) {
-            if (data!.loading) {
-              expect(data!.allPeople).toBeUndefined();
-            } else {
-              expect(prevProps.data!.loading).toBe(true);
-              expect(data!.allPeople).toEqual(data2.allPeople);
-              done = true;
+          try {
+            const { data } = this.props;
+            switch (count) {
+              case 0:
+                expect(prevProps.data!.loading).toBe(true);
+                expect(prevProps.data!.variables).toEqual({ first: 1 });
+                expect(prevProps.data!.allPeople).toBe(undefined);
+                expect(data!.loading).toBe(false);
+                expect(data!.variables).toEqual({ first: 1 });
+                expect(data!.allPeople).toEqual(data1.allPeople);
+                break;
+              case 1:
+                expect(data!.loading).toBe(false);
+                expect(data!.variables).toEqual({ first: 2 });
+                expect(data!.allPeople).toEqual(data1.allPeople);
+                break;
+              case 2:
+                expect(data!.loading).toBe(true);
+                expect(data!.variables).toEqual({ first: 2 });
+                expect(data!.allPeople).toBe(undefined);
+                break;
+              case 3:
+                expect(data!.loading).toBe(false);
+                expect(data!.variables).toEqual({ first: 2 });
+                expect(data!.allPeople).toEqual(data2.allPeople);
+                break;
             }
+          } catch (err) {
+            reject(err);
           }
+
+          count++;
         }
+
         render() {
           return null;
         }
@@ -218,7 +262,6 @@ describe('[queries] lifecycle', () => {
 
       componentDidMount() {
         setTimeout(() => {
-          count++;
           this.setState({ first: 2 });
         }, 50);
       }
@@ -234,7 +277,7 @@ describe('[queries] lifecycle', () => {
       </ApolloProvider>
     );
 
-    return wait(() => expect(done).toBeTruthy()).then(resolve, reject);
+    waitFor(() => expect(count).toBe(4)).then(resolve, reject);
   });
 
   itAsync('reruns the queries on prop change when using passed props', (resolve, reject) => {
@@ -268,21 +311,44 @@ describe('[queries] lifecycle', () => {
       cache: new Cache({ addTypename: false })
     });
 
-    let done = false;
-    const Container = graphql<Vars, Data, Vars>(query)(
+    const Container = graphql<Vars, Data, Vars>(
+      query,
+      { options: { notifyOnNetworkStatusChange: true } },
+    )(
       class extends React.Component<ChildProps<Vars, Data, Vars>> {
         componentDidUpdate(prevProps: ChildProps<Vars, Data, Vars>) {
-          const { data } = this.props;
-          // loading is true, but data still there
-          if (count === 1) {
-            if (data!.loading) {
-              expect(data!.allPeople).toBeUndefined();
-            } else {
-              expect(prevProps.data!.loading).toBe(true);
-              expect(data!.allPeople).toEqual(data2.allPeople);
-              done = true;
+          try {
+            const { data } = this.props;
+            switch (count) {
+              case 0:
+                expect(prevProps.data!.loading).toBe(true);
+                expect(prevProps.data!.variables).toEqual({ first: 1 });
+                expect(prevProps.data!.allPeople).toBe(undefined);
+                expect(data!.loading).toBe(false);
+                expect(data!.variables).toEqual({ first: 1 });
+                expect(data!.allPeople).toEqual(data1.allPeople);
+                break;
+              case 1:
+                expect(data!.loading).toBe(false);
+                expect(data!.variables).toEqual({ first: 2 });
+                expect(data!.allPeople).toEqual(data1.allPeople);
+                break;
+              case 2:
+                expect(data!.loading).toBe(true);
+                expect(data!.variables).toEqual({ first: 2 });
+                expect(data!.allPeople).toBe(undefined);
+                break;
+              case 3:
+                expect(data!.loading).toBe(false);
+                expect(data!.variables).toEqual({ first: 2 });
+                expect(data!.allPeople).toEqual(data2.allPeople);
+                break;
             }
+          } catch (err) {
+            reject(err);
           }
+
+          count++;
         }
         render() {
           return null;
@@ -295,7 +361,6 @@ describe('[queries] lifecycle', () => {
 
       componentDidMount() {
         setTimeout(() => {
-          count++;
           this.setState({ first: 2 });
         }, 50);
       }
@@ -311,7 +376,7 @@ describe('[queries] lifecycle', () => {
       </ApolloProvider>
     );
 
-    return wait(() => expect(done).toBeTruthy()).then(resolve, reject);
+    waitFor(() => expect(count).toBe(4)).then(resolve, reject);
   });
 
   itAsync('stays subscribed to updates after irrelevant prop changes', (resolve, reject) => {
@@ -402,7 +467,7 @@ describe('[queries] lifecycle', () => {
       </ApolloProvider>
     );
 
-    return wait(() => expect(count).toBe(3)).then(resolve, reject);
+    waitFor(() => expect(count).toBe(3)).then(resolve, reject);
   });
 
   itAsync('correctly rebuilds props on remount', (resolve, reject) => {
@@ -466,7 +531,7 @@ describe('[queries] lifecycle', () => {
 
     rerender = render(app).rerender;
 
-    return wait(() => expect(done).toBeTruthy()).then(resolve, reject);
+    waitFor(() => expect(done).toBeTruthy()).then(resolve, reject);
   });
 
   itAsync('will re-execute a query when the client changes', (resolve, reject) => {
@@ -532,133 +597,133 @@ describe('[queries] lifecycle', () => {
         }
 
         render() {
-          const { loading, a, b, c } = this.props.data!;
-          switch (count) {
-            case 0:
-              expect({ loading, a, b, c }).toEqual({
-                loading: true,
-                a: undefined,
-                b: undefined,
-                c: undefined
-              });
-              break;
-            case 1:
-              expect({ loading, a, b, c }).toEqual({
-                loading: false,
-                a: 1,
-                b: 2,
-                c: 3
-              });
-              refetchQuery!();
-              break;
-            case 2:
-              expect({ loading, a, b, c }).toEqual({
-                loading: true,
-                a: 1,
-                b: 2,
-                c: 3
-              });
-              break;
-            case 3:
-              expect({ loading, a, b, c }).toEqual({
-                loading: false,
-                a: 1,
-                b: 2,
-                c: 3
-              });
-              setTimeout(() => {
-                switchClient!(client2);
-              });
-              break;
-            case 4:
-              expect({ loading, a, b, c }).toEqual({
-                loading: true,
-                a: undefined,
-                b: undefined,
-                c: undefined
-              });
-              break;
-            case 5:
-              expect({ loading, a, b, c }).toEqual({
-                loading: false,
-                a: 4,
-                b: 5,
-                c: 6
-              });
-              refetchQuery!();
-              break;
-            case 6:
-              expect({ loading, a, b, c }).toEqual({
-                loading: true,
-                a: 4,
-                b: 5,
-                c: 6
-              });
-              break;
-            case 7:
-              expect({ loading, a, b, c }).toEqual({
-                loading: false,
-                a: 4,
-                b: 5,
-                c: 6
-              });
-              setTimeout(() => {
-                switchClient!(client3);
-              });
-              break;
-            case 8:
-              expect({ loading, a, b, c }).toEqual({
-                loading: true,
-                a: undefined,
-                b: undefined,
-                c: undefined
-              });
-              break;
-            case 9:
-              expect({ loading, a, b, c }).toEqual({
-                loading: false,
-                a: 7,
-                b: 8,
-                c: 9
-              });
-              setTimeout(() => {
-                switchClient!(client1);
-              });
-              break;
-            case 10:
-              expect({ loading, a, b, c }).toEqual({
-                loading: false,
-                a: 1,
-                b: 2,
-                c: 3
-              });
-              setTimeout(() => {
-                switchClient!(client2);
-              });
-              break;
-            case 11:
-              expect({ loading, a, b, c }).toEqual({
-                loading: false,
-                a: 4,
-                b: 5,
-                c: 6
-              });
-              setTimeout(() => {
-                switchClient!(client3);
-              });
-              break;
-            case 12:
-              expect({ loading, a, b, c }).toEqual({
-                loading: false,
-                a: 7,
-                b: 8,
-                c: 9
-              });
-              break;
-            default:
-            // do nothing
+          try {
+            const { loading, a, b, c } = this.props.data!;
+            switch (count) {
+              case 0:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: true,
+                  a: undefined,
+                  b: undefined,
+                  c: undefined
+                });
+                break;
+              case 1:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: false,
+                  a: 1,
+                  b: 2,
+                  c: 3
+                });
+                refetchQuery!();
+                break;
+              case 2:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: true,
+                  a: 1,
+                  b: 2,
+                  c: 3
+                });
+                break;
+              case 3:
+                setTimeout(() => {
+                  switchClient!(client2);
+                });
+                // fallthrough
+              case 4:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: false,
+                  a: 1,
+                  b: 2,
+                  c: 3
+                });
+                break;
+              case 5:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: true,
+                  a: undefined,
+                  b: undefined,
+                  c: undefined
+                });
+                break;
+              case 6:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: false,
+                  a: 4,
+                  b: 5,
+                  c: 6
+                });
+                refetchQuery!();
+                break;
+              case 7:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: true,
+                  a: 4,
+                  b: 5,
+                  c: 6
+                });
+                break;
+              case 8:
+                setTimeout(() => {
+                  switchClient!(client3);
+                });
+                // fallthrough
+              case 9:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: false,
+                  a: 4,
+                  b: 5,
+                  c: 6
+                });
+                break;
+              case 10:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: true,
+                  a: undefined,
+                  b: undefined,
+                  c: undefined
+                });
+                break;
+              case 11:
+                setTimeout(() => {
+                  switchClient!(client1);
+                });
+                // fallthrough
+              case 12:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: false,
+                  a: 7,
+                  b: 8,
+                  c: 9
+                });
+                break;
+              case 13:
+                setTimeout(() => {
+                  switchClient!(client3);
+                });
+                // fallthrough
+              case 14:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: false,
+                  a: 1,
+                  b: 2,
+                  c: 3
+                });
+                break;
+              case 15:
+                expect({ loading, a, b, c }).toEqual({
+                  loading: false,
+                  a: 7,
+                  b: 8,
+                  c: 9
+                });
+                break;
+            }
+          } catch (err) {
+            reject(err);
           }
-          count += 1;
+
+          count++;
           return null;
         }
       }
@@ -686,7 +751,7 @@ describe('[queries] lifecycle', () => {
 
     render(<ClientSwitcher />);
 
-    return wait(() => expect(count).toBe(13)).then(resolve, reject);
+    waitFor(() => expect(count).toBe(16)).then(resolve, reject);
   });
 
   itAsync('handles synchronous racecondition with prefilled data from the server', (resolve, reject) => {
@@ -736,11 +801,15 @@ describe('[queries] lifecycle', () => {
         }
 
         render() {
-          count++;
-          const user = this.props.data!.user;
-          const name = user ? user.name : '';
-          if (count === 2) {
-            expect(name).toBe('Luke Skywalker');
+          try {
+            count++;
+            const user = this.props.data!.user;
+            const name = user ? user.name : '';
+            if (count === 3) {
+              expect(name).toBe('Luke Skywalker');
+            }
+          } catch (err) {
+            reject(err);
           }
           return null;
         }
@@ -753,7 +822,7 @@ describe('[queries] lifecycle', () => {
       </ApolloProvider>
     );
 
-    return wait(() => expect(done).toBeTruthy()).then(resolve, reject);
+    waitFor(() => expect(done).toBeTruthy()).then(resolve, reject);
   });
 
   itAsync('handles asynchronous racecondition with prefilled data from the server', async (resolve, reject) => {
@@ -815,26 +884,30 @@ describe('[queries] lifecycle', () => {
       <ApolloProvider client={client}>
         <QueryComponent query={query}>
           {({ loading, data, refetch }: any) => {
-            if (!loading) {
-              if (!refetched) {
-                expect(data.books[0].name).toEqual('ssrfirst');
-                //setTimeout allows component to mount, which often happens
-                //when waiting  ideally we should be able to call refetch
-                //immediately However the subscription needs to start before
-                //we update the data To get around this issue, we would need
-                //to start the subscription before we render to the page. In
-                //practice, this seems like an uncommon use case, since the
-                //data you get is fresh, so one would wait for an interaction
-                setTimeout(() => {
-                  refetch().then((refetchResult: any) => {
-                    expect(refetchResult.data.books[0].name).toEqual('first');
-                    done = true;
+            try {
+              if (!loading) {
+                if (!refetched) {
+                  expect(data.books[0].name).toEqual('ssrfirst');
+                  //setTimeout allows component to mount, which often happens
+                  //when waiting  ideally we should be able to call refetch
+                  //immediately However the subscription needs to start before
+                  //we update the data To get around this issue, we would need
+                  //to start the subscription before we render to the page. In
+                  //practice, this seems like an uncommon use case, since the
+                  //data you get is fresh, so one would wait for an interaction
+                  setTimeout(() => {
+                    refetch().then((refetchResult: any) => {
+                      expect(refetchResult.data.books[0].name).toEqual('first');
+                      done = true;
+                    });
                   });
-                });
-                refetched = true;
-              } else {
-                expect(data.books[0].name).toEqual('first');
+                  refetched = true;
+                } else {
+                  expect(data.books[0].name).toEqual('first');
+                }
               }
+            } catch (err) {
+              reject(err);
             }
             return <p> stub </p>;
           }}
@@ -844,7 +917,7 @@ describe('[queries] lifecycle', () => {
 
     expect(render(ApolloApp).container).toMatchSnapshot();
 
-    return wait(() => {
+    waitFor(() => {
       expect(done).toBeTruthy();
     }).then(resolve, reject);
   });

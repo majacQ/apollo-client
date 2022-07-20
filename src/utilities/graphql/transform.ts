@@ -1,3 +1,5 @@
+import { invariant } from '../globals';
+
 import {
   DocumentNode,
   SelectionNode,
@@ -12,7 +14,9 @@ import {
   VariableNode,
   visit,
 } from 'graphql';
-import { invariant } from 'ts-invariant';
+
+// TODO(brian): A hack until this issue is resolved (https://github.com/graphql/graphql-js/issues/3356)
+type Kind = any;
 
 import {
   checkDocument,
@@ -52,9 +56,9 @@ export type RemoveVariableDefinitionConfig = RemoveNodeConfig<
 >;
 
 const TYPENAME_FIELD: FieldNode = {
-  kind: 'Field',
+  kind: 'Field' as Kind,
   name: {
-    kind: 'Name',
+    kind: 'Name' as Kind,
     value: '__typename',
   },
 };
@@ -209,7 +213,9 @@ export function removeDirectivesFromDocument(
   return modifiedDoc;
 }
 
-export function addTypenameToDocument(doc: DocumentNode): DocumentNode {
+export const addTypenameToDocument = Object.assign(function (
+  doc: DocumentNode
+): DocumentNode {
   return visit(checkDocument(doc), {
     SelectionSet: {
       enter(node, _key, parent) {
@@ -259,14 +265,11 @@ export function addTypenameToDocument(doc: DocumentNode): DocumentNode {
       },
     },
   });
-}
-
-export interface addTypenameToDocument {
-  added(field: FieldNode): boolean;
-}
-addTypenameToDocument.added = function (field: FieldNode) {
-  return field === TYPENAME_FIELD;
-};
+}, {
+  added(field: FieldNode): boolean {
+    return field === TYPENAME_FIELD;
+  },
+});
 
 const connectionRemoveConfig = {
   test: (directive: DirectiveNode) => {

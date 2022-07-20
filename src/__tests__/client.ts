@@ -2,18 +2,25 @@ import { cloneDeep, assign } from 'lodash';
 import { GraphQLError, ExecutionResult, DocumentNode } from 'graphql';
 import gql from 'graphql-tag';
 
-import { Observable } from '../utilities/observables/Observable';
-import { ApolloLink } from '../link/core/ApolloLink';
-import { InMemoryCache } from '../cache/inmemory/inMemoryCache';
-import { PossibleTypesMap } from '../cache/inmemory/types';
-import { stripSymbols } from './utils/stripSymbols';
-import { WatchQueryOptions, FetchPolicy } from '../core/watchQueryOptions';
-import { ApolloError } from '../errors/ApolloError';
-import { ApolloClient } from '..';
-import subscribeAndCount from './utils/subscribeAndCount';
-import { withWarning } from './utils/wrap';
-import { itAsync } from './utils/itAsync';
-import { mockSingleLink } from '../__mocks__/mockLinks';
+import {
+  ApolloClient,
+  FetchPolicy,
+  WatchQueryFetchPolicy,
+  QueryOptions,
+  ObservableQuery,
+} from '../core';
+
+import { Observable, ObservableSubscription } from '../utilities';
+import { ApolloLink } from '../link/core';
+import { InMemoryCache, makeVar, PossibleTypesMap } from '../cache';
+import { ApolloError } from '../errors';
+
+import {
+  itAsync,
+  stripSymbols,
+  subscribeAndCount,
+  mockSingleLink,
+} from '../testing';
 
 describe('client', () => {
   it('can be loaded via require', () => {
@@ -177,10 +184,10 @@ describe('client', () => {
       test: { key1: ['value', 'value2'], key2: { key3: 4 } },
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query, variables },
       result: { data: result },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -238,17 +245,13 @@ describe('client', () => {
       },
     };
 
-    const link = mockSingleLink(
-      reject,
-      {
-        request: { query, variables },
-        result: { data: result },
-      },
-      {
-        request: { query, variables: override },
-        result: { data: overriddenResult },
-      },
-    );
+    const link = mockSingleLink({
+      request: { query, variables },
+      result: { data: result },
+    }, {
+      request: { query, variables: override },
+      result: { data: overriddenResult },
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -390,10 +393,10 @@ describe('client', () => {
       },
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { data },
-    });
+    }).setOnError(reject);
 
     const initialState: any = {
       data: {
@@ -448,10 +451,10 @@ describe('client', () => {
       },
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { data },
-    });
+    }).setOnError(reject);
 
     const initialState: any = {
       data: {
@@ -504,10 +507,10 @@ describe('client', () => {
       },
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { data },
-    });
+    }).setOnError(reject);
 
     const initialState: any = {
       data: {
@@ -560,16 +563,13 @@ describe('client', () => {
     `;
 
     const errors: GraphQLError[] = [
-      {
-        name: 'test',
-        message: 'Syntax Error GraphQL request (8:9) Expected Name, found EOF',
-      },
+      new GraphQLError('Syntax Error GraphQL request (8:9) Expected Name, found EOF')
     ];
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { errors },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -603,10 +603,7 @@ describe('client', () => {
     };
 
     const errors: GraphQLError[] = [
-      {
-        name: 'test',
-        message: 'Syntax Error GraphQL request (8:9) Expected Name, found EOF',
-      },
+      new GraphQLError('Syntax Error GraphQL request (8:9) Expected Name, found EOF'),
     ];
 
     const link = ApolloLink.from([
@@ -626,41 +623,6 @@ describe('client', () => {
       expect(error.graphQLErrors).toEqual(errors);
       resolve();
     });
-  });
-
-  itAsync.skip('should pass a network error correctly on a query using an observable network interface with a warning', (resolve, reject) => {
-    withWarning(() => {
-      const query = gql`
-        query people {
-          allPeople(first: 1) {
-            people {
-              name
-            }
-          }
-        }
-      `;
-
-      const networkError = new Error('Some kind of network error.');
-
-      const link = ApolloLink.from([
-        () => {
-          return new Observable(_ => {
-            throw networkError;
-          });
-        },
-      ]);
-
-      const client = new ApolloClient({
-        link,
-        cache: new InMemoryCache({ addTypename: false }),
-      });
-
-      client.query({ query }).catch((error: ApolloError) => {
-        expect(error.networkError).toBeDefined();
-        expect(error.networkError!.message).toEqual(networkError.message);
-        resolve();
-      });
-    }, /deprecated/);
   });
 
   itAsync('should pass a network error correctly on a query with apollo-link network interface', (resolve, reject) => {
@@ -767,10 +729,10 @@ describe('client', () => {
       },
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { data },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -812,10 +774,10 @@ describe('client', () => {
       }
     `;
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: {},
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -854,10 +816,10 @@ describe('client', () => {
       },
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { data },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -907,17 +869,13 @@ describe('client', () => {
       },
     };
 
-    const link = mockSingleLink(
-      reject,
-      {
-        request: { query },
-        result: { data: result },
-      },
-      {
-        request: { query: transformedQuery },
-        result: { data: transformedResult },
-      },
-    );
+    const link = mockSingleLink({
+      request: { query },
+      result: { data: result },
+    }, {
+      request: { query: transformedQuery },
+      result: { data: transformedResult },
+    }, false).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -960,17 +918,13 @@ describe('client', () => {
         __typename: 'Author',
       },
     };
-    const link = mockSingleLink(
-      reject,
-      {
-        request: { query },
-        result: { data: result },
-      },
-      {
-        request: { query: transformedQuery },
-        result: { data: transformedResult },
-      },
-    );
+    const link = mockSingleLink({
+      request: { query },
+      result: { data: result },
+    }, {
+      request: { query: transformedQuery },
+      result: { data: transformedResult },
+    }, false).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -1010,10 +964,10 @@ describe('client', () => {
         },
       },
     };
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query: mutation },
       result: { data: result },
-    });
+    }).setOnError(reject);
     const client = new ApolloClient({
       link,
       cache: new InMemoryCache({ addTypename: false }),
@@ -1046,10 +1000,10 @@ describe('client', () => {
       },
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { data: result },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -1092,10 +1046,10 @@ describe('client', () => {
       },
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { data: result },
-    });
+    }).setOnError(reject);
     const client = new ApolloClient({
       link,
       cache: new InMemoryCache({ addTypename: false }),
@@ -1128,10 +1082,10 @@ describe('client', () => {
       },
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { data: result },
-    });
+    }).setOnError(reject);
     const client = new ApolloClient({
       link,
       cache: new InMemoryCache({ addTypename: false }),
@@ -1174,10 +1128,10 @@ describe('client', () => {
       ],
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { data: result },
-    });
+    }).setOnError(reject);
     const client = new ApolloClient({
       link,
       cache: new InMemoryCache({
@@ -1223,10 +1177,10 @@ describe('client', () => {
       ],
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { data: result },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -1283,17 +1237,13 @@ describe('client', () => {
       fortuneCookie: 'The waiter spit in your food',
     };
 
-    const link = mockSingleLink(
-      reject,
-      {
-        request: { query },
-        result: { data: result },
-      },
-      {
-        request: { query: mutation },
-        result: { data: mutationResult },
-      },
-    );
+    const link = mockSingleLink({
+      request: { query },
+      result: { data: result },
+    }, {
+      request: { query: mutation },
+      result: { data: mutationResult },
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -1406,10 +1356,9 @@ describe('client', () => {
       },
     };
 
-    // we have two responses for identical queries, but only the first should be requested.
-    // the second one should never make it through to the network interface.
+    // we have two responses for identical queries, and both should be requested.
+    // the second one should make it through to the network interface.
     const link = mockSingleLink(
-      reject,
       {
         request: { query: queryDoc },
         result: { data },
@@ -1419,11 +1368,11 @@ describe('client', () => {
         request: { query: queryDoc },
         result: { data: data2 },
       },
-    );
+    ).setOnError(reject);
+
     const client = new ApolloClient({
       link,
       cache: new InMemoryCache({ addTypename: false }),
-
       queryDeduplication: false,
     });
 
@@ -1458,8 +1407,99 @@ describe('client', () => {
 
     // we have two responses for identical queries, but only the first should be requested.
     // the second one should never make it through to the network interface.
+    const link = mockSingleLink({
+      request: { query: queryDoc },
+      result: { data },
+      delay: 10,
+    }, {
+      request: { query: queryDoc },
+      result: { data: data2 },
+    }).setOnError(reject);
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+    });
+
+    const q1 = client.query({ query: queryDoc });
+    const q2 = client.query({ query: queryDoc });
+
+    // if deduplication didn't happen, result.data will equal data2.
+    return Promise.all([q1, q2]).then(([result1, result2]) => {
+      expect(result1.data).toEqual(result2.data);
+    }).then(resolve, reject);
+  });
+
+  it('deduplicates queries if query context.queryDeduplication is set to true', () => {
+    const queryDoc = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const data = {
+      author: {
+        name: 'Jonas',
+      },
+    };
+    const data2 = {
+      author: {
+        name: 'Dhaivat',
+      },
+    };
+
+    // we have two responses for identical queries, but only the first should be requested.
+    // the second one should never make it through to the network interface.
     const link = mockSingleLink(
-      reject,
+      {
+        request: { query: queryDoc },
+        result: { data },
+        delay: 10,
+      },
+      {
+        request: { query: queryDoc },
+        result: { data: data2 },
+      },
+    );
+    const client = new ApolloClient({
+      link,
+      cache: new InMemoryCache({ addTypename: false }),
+      queryDeduplication: false,
+    });
+
+    // Both queries need to be deduplicated, otherwise only one gets tracked
+    const q1 = client.query({ query: queryDoc, context: { queryDeduplication: true } });
+    const q2 = client.query({ query: queryDoc, context: { queryDeduplication: true } });
+
+    // if deduplication happened, result2.data will equal data.
+    return Promise.all([q1, q2]).then(([result1, result2]) => {
+      expect(stripSymbols(result1.data)).toEqual(data);
+      expect(stripSymbols(result2.data)).toEqual(data);
+    });
+  });
+
+  it('does not deduplicate queries if query context.queryDeduplication is set to false', () => {
+    const queryDoc = gql`
+      query {
+        author {
+          name
+        }
+      }
+    `;
+    const data = {
+      author: {
+        name: 'Jonas',
+      },
+    };
+    const data2 = {
+      author: {
+        name: 'Dhaivat',
+      },
+    };
+
+    // we have two responses for identical queries, and both should be requested.
+    // the second one should make it through to the network interface.
+    const link = mockSingleLink(
       {
         request: { query: queryDoc },
         result: { data },
@@ -1475,13 +1515,15 @@ describe('client', () => {
       cache: new InMemoryCache({ addTypename: false }),
     });
 
+    // The first query gets tracked in the dedup logic, the second one ignores it and runs anyways
     const q1 = client.query({ query: queryDoc });
-    const q2 = client.query({ query: queryDoc });
+    const q2 = client.query({ query: queryDoc, context: { queryDeduplication: false } });
 
-    // if deduplication didn't happen, result.data will equal data2.
+    // if deduplication happened, result2.data will equal data.
     return Promise.all([q1, q2]).then(([result1, result2]) => {
-      expect(result1.data).toEqual(result2.data);
-    }).then(resolve, reject);
+      expect(stripSymbols(result1.data)).toEqual(data);
+      expect(stripSymbols(result2.data)).toEqual(data2);
+    });
   });
 
   itAsync('unsubscribes from deduplicated observables only once', (resolve, reject) => {
@@ -1542,7 +1584,7 @@ describe('client', () => {
         cache: new InMemoryCache(),
       });
       expect(() => {
-        client.query({ query, returnPartialData: true } as WatchQueryOptions);
+        client.query({ query, returnPartialData: true } as QueryOptions);
       }).toThrowError(/returnPartialData/);
     });
 
@@ -1552,7 +1594,7 @@ describe('client', () => {
         cache: new InMemoryCache(),
       });
       expect(() => {
-        client.query({ query, returnPartialData: true } as WatchQueryOptions);
+        client.query({ query, returnPartialData: true } as QueryOptions);
       }).toThrowError(/returnPartialData/);
     });
   });
@@ -1581,10 +1623,10 @@ describe('client', () => {
     };
 
     itAsync('for internal store', (resolve, reject) => {
-      const link = mockSingleLink(reject, {
+      const link = mockSingleLink({
         request: { query },
         result: { data },
-      });
+      }).setOnError(reject);
 
       const client = new ApolloClient({
         link,
@@ -1666,14 +1708,19 @@ describe('client', () => {
         },
       });
 
-      checkCacheAndNetworkError(() => client.query({ query }));
+      checkCacheAndNetworkError(() => client.query({
+        query,
+        // This undefined value should be ignored in favor of
+        // defaultOptions.query.fetchPolicy.
+        fetchPolicy: void 0,
+      }));
     });
 
     itAsync('fetches from cache first, then network', (resolve, reject) => {
-      const link = mockSingleLink(reject, {
+      const link = mockSingleLink({
         request: { query },
         result: { data: networkFetch },
-      });
+      }).setOnError(reject);
 
       const client = new ApolloClient({
         link,
@@ -1698,10 +1745,10 @@ describe('client', () => {
     });
 
     itAsync('does not fail if cache entry is not present', (resolve, reject) => {
-      const link = mockSingleLink(reject, {
+      const link = mockSingleLink({
         request: { query },
         result: { data: networkFetch },
-      });
+      }).setOnError(reject);
       const client = new ApolloClient({
         link,
         cache: new InMemoryCache({ addTypename: false }),
@@ -1713,19 +1760,15 @@ describe('client', () => {
       });
 
       subscribeAndCount(reject, obs, (handleCount, result) => {
-        if (handleCount === 1) {
-          expect(result.data).toBe(undefined);
-          expect(result.loading).toBe(true);
-        } else if (handleCount === 2) {
-          expect(stripSymbols(result.data)).toEqual(networkFetch);
-          expect(result.loading).toBe(false);
-          resolve();
-        }
+        expect(handleCount).toBe(1);
+        expect(stripSymbols(result.data)).toEqual(networkFetch);
+        expect(result.loading).toBe(false);
+        resolve();
       });
     });
 
     itAsync('fails if network request fails', (resolve, reject) => {
-      const link = mockSingleLink(error => { throw error }); // no queries = no replies.
+      const link = mockSingleLink(); // no queries = no replies.
       const client = new ApolloClient({
         link,
         cache: new InMemoryCache({ addTypename: false }),
@@ -1736,26 +1779,22 @@ describe('client', () => {
         fetchPolicy: 'cache-and-network',
       });
 
-      let count = 0;
       obs.subscribe({
-        next: result => {
-          expect(result.data).toBe(undefined);
-          expect(result.loading).toBe(true);
-          count++;
-        },
         error: e => {
-          expect(e.message).toMatch(/No more mocked responses/);
-          expect(count).toBe(1); // make sure next was called.
-          setTimeout(resolve, 100);
+          if (!/No more mocked responses/.test(e.message)) {
+            reject(e);
+          } else {
+            resolve();
+          }
         },
       });
     });
 
     itAsync('fetches from cache first, then network and does not have an unhandled error', (resolve, reject) => {
-      const link = mockSingleLink(reject, {
+      const link = mockSingleLink({
         request: { query },
         result: { errors: [{ message: 'network failure' }] },
-      });
+      }).setOnError(reject);
 
       const client = new ApolloClient({
         link,
@@ -1792,28 +1831,6 @@ describe('client', () => {
   });
 
   describe('standby queries', () => {
-    // XXX queries can only be set to standby by setOptions. This is simply out of caution,
-    // not some fundamental reason. We just want to make sure they're not used in unanticipated ways.
-    // If there's a good use-case, the error and test could be removed.
-    it('cannot be started with watchQuery or query', () => {
-      const client = new ApolloClient({
-        link: ApolloLink.empty(),
-        cache: new InMemoryCache(),
-      });
-      expect(() =>
-        client.watchQuery({
-          query: gql`
-            {
-              abc
-            }
-          `,
-          fetchPolicy: 'standby',
-        }),
-      ).toThrowError(
-        'client.watchQuery cannot be called with fetchPolicy set to "standby"',
-      );
-    });
-
     itAsync('are not watching the store or notifying on updates', (resolve, reject) => {
       const query = gql`
         {
@@ -1823,10 +1840,10 @@ describe('client', () => {
       const data = { test: 'ok' };
       const data2 = { test: 'not ok' };
 
-      const link = mockSingleLink(reject, {
+      const link = mockSingleLink({
         request: { query },
         result: { data },
-      });
+      }).setOnError(reject);
 
       const client = new ApolloClient({ link, cache: new InMemoryCache() });
 
@@ -1836,7 +1853,7 @@ describe('client', () => {
       subscribeAndCount(reject, obs, (handleCount, result) => {
         if (handleCount === 1) {
           expect(stripSymbols(result.data)).toEqual(data);
-          obs.setOptions({ fetchPolicy: 'standby' }).then(() => {
+          obs.setOptions({ query, fetchPolicy: 'standby' }).then(() => {
             client.writeQuery({ query, data: data2 });
             // this write should be completely ignored by the standby query
           });
@@ -1864,29 +1881,27 @@ describe('client', () => {
       const data = { test: 'ok' };
       const data2 = { test: 'not ok' };
 
-      const link = mockSingleLink(reject, {
+      const link = mockSingleLink({
         request: { query },
         result: { data },
-      });
+      }).setOnError(reject);
 
       const client = new ApolloClient({ link, cache: new InMemoryCache() });
 
       const obs = client.watchQuery({ query, fetchPolicy: 'cache-first' });
 
-      let handleCalled = false;
       subscribeAndCount(reject, obs, (handleCount, result) => {
         if (handleCount === 1) {
           expect(stripSymbols(result.data)).toEqual(data);
-          obs.setOptions({ fetchPolicy: 'standby' }).then(() => {
+          obs.setOptions({ query, fetchPolicy: 'standby' }).then(() => {
             client.writeQuery({ query, data: data2 });
             // this write should be completely ignored by the standby query
             setTimeout(() => {
-              obs.setOptions({ fetchPolicy: 'cache-first' });
+              obs.setOptions({ query, fetchPolicy: 'cache-first' });
             }, 10);
           });
         }
         if (handleCount === 2) {
-          handleCalled = true;
           expect(stripSymbols(result.data)).toEqual(data2);
           resolve();
         }
@@ -1915,17 +1930,13 @@ describe('client', () => {
     };
 
     function makeLink(reject: (reason: any) => any) {
-      return mockSingleLink(
-        reject,
-        {
-          request: { query },
-          result: { data: firstFetch },
-        },
-        {
-          request: { query },
-          result: { data: secondFetch },
-        },
-      );
+      return mockSingleLink({
+        request: { query },
+        result: { data: firstFetch },
+      }, {
+        request: { query },
+        result: { data: secondFetch },
+      }).setOnError(reject);
     }
 
     itAsync('forces the query to rerun', (resolve, reject) => {
@@ -1952,7 +1963,7 @@ describe('client', () => {
         cache: new InMemoryCache({ addTypename: false }),
       });
 
-      const options: WatchQueryOptions = { query, fetchPolicy: 'network-only' };
+      const options: QueryOptions = { query, fetchPolicy: 'network-only' };
 
       // Run a query first to initialize the store
       return client
@@ -2013,7 +2024,7 @@ describe('client', () => {
     };
     const networkError = new Error('Some kind of network error.');
     const client = new ApolloClient({
-      link: mockSingleLink(reject, {
+      link: mockSingleLink({
         request: { query: mutation },
         result: { data },
         error: networkError,
@@ -2052,10 +2063,10 @@ describe('client', () => {
     };
     const errors = [new Error('Some kind of GraphQL error.')];
     const client = new ApolloClient({
-      link: mockSingleLink(reject, {
+      link: mockSingleLink({
         request: { query: mutation },
         result: { data, errors },
-      }),
+      }).setOnError(reject),
       cache: new InMemoryCache({ addTypename: false }),
     });
     client
@@ -2089,18 +2100,18 @@ describe('client', () => {
     };
     const errors = [new Error('Some kind of GraphQL error.')];
     const client = new ApolloClient({
-      link: mockSingleLink(reject, {
+      link: mockSingleLink({
         request: { query: mutation },
         result: { data, errors },
-      }),
+      }).setOnError(reject),
       cache: new InMemoryCache({ addTypename: false }),
     });
     client
       .mutate({ mutation, errorPolicy: 'all' })
       .then(result => {
         expect(result.errors).toBeDefined();
-        expect(result.errors.length).toBe(1);
-        expect(result.errors[0].message).toBe(errors[0].message);
+        expect(result.errors!.length).toBe(1);
+        expect(result.errors![0].message).toBe(errors[0].message);
         expect(result.data).toEqual(data);
         resolve();
       })
@@ -2128,10 +2139,10 @@ describe('client', () => {
     };
     const errors = [new Error('Some kind of GraphQL error.')];
     const client = new ApolloClient({
-      link: mockSingleLink(reject, {
+      link: mockSingleLink({
         request: { query: mutation },
         result: { data, errors },
-      }),
+      }).setOnError(reject),
       cache: new InMemoryCache({ addTypename: false }),
     });
     client
@@ -2167,10 +2178,10 @@ describe('client', () => {
     };
     const errors = [new Error('Some kind of GraphQL error.')];
     const client = new ApolloClient({
-      link: mockSingleLink(reject, {
+      link: mockSingleLink({
         request: { query: mutation },
         result: { data, errors },
-      }),
+      }).setOnError(reject),
       cache: new InMemoryCache({ addTypename: false }),
     });
     const mutatePromise = client.mutate({
@@ -2185,9 +2196,11 @@ describe('client', () => {
       },
     });
 
-    const { data, optimisticData } = client.cache as any;
-    expect(optimisticData).not.toBe(data);
-    expect(optimisticData.parent).toBe(data);
+    {
+      const { data, optimisticData } = client.cache as any;
+      expect(optimisticData).not.toBe(data);
+      expect(optimisticData.parent).toBe(data);
+    }
 
     mutatePromise
       .then(_ => {
@@ -2205,6 +2218,8 @@ describe('client', () => {
       link: ApolloLink.empty(),
       cache: new InMemoryCache(),
     });
+
+    // @ts-ignore
     const spy = jest.spyOn(client.queryManager, 'clearStore');
     await client.clearStore();
     expect(spy).toHaveBeenCalled();
@@ -2244,6 +2259,8 @@ describe('client', () => {
       link: ApolloLink.empty(),
       cache: new InMemoryCache(),
     });
+
+    // @ts-ignore
     const spy = jest.spyOn(client.queryManager, 'clearStore');
     await client.resetStore();
     expect(spy).toHaveBeenCalled();
@@ -2279,7 +2296,7 @@ describe('client', () => {
   });
 
   it('resetStore waits until all onResetStore callbacks are called', async () => {
-    const delay = time => new Promise(r => setTimeout(r, time));
+    const delay = (time: number) => new Promise(r => setTimeout(r, time));
 
     const client = new ApolloClient({
       link: ApolloLink.empty(),
@@ -2308,7 +2325,7 @@ describe('client', () => {
   });
 
   it('invokes onResetStore callbacks before notifying queries during resetStore call', async () => {
-    const delay = time => new Promise(r => setTimeout(r, time));
+    const delay = (time: number) => new Promise(r => setTimeout(r, time));
 
     const query = gql`
       query {
@@ -2335,12 +2352,10 @@ describe('client', () => {
       },
     };
 
-    let timesFired = 0;
     const link = ApolloLink.from([
       new ApolloLink(
         () =>
           new Observable(observer => {
-            timesFired += 1;
             observer.next({ data });
             observer.complete();
             return;
@@ -2364,14 +2379,7 @@ describe('client', () => {
       expect(count).toEqual(0);
       await delay(11).then(() => count++);
       expect(count).toEqual(2);
-
-      try {
-        client.readQuery({ query });
-        fail('should not see any data');
-      } catch (e) {
-        expect(e.message).toMatch(/Can't find field/);
-      }
-
+      expect(client.readQuery({ query })).toBe(null);
       client.cache.writeQuery({ query, data: data2 });
     });
 
@@ -2388,7 +2396,7 @@ describe('client', () => {
       }
     });
 
-    const observable = client
+    client
       .watchQuery<any>({
         query,
         notifyOnNetworkStatusChange: false,
@@ -2411,53 +2419,11 @@ describe('client', () => {
       link: ApolloLink.empty(),
       cache: new InMemoryCache(),
     });
+
+    // @ts-ignore
     const spy = jest.spyOn(client.queryManager, 'reFetchObservableQueries');
     await client.reFetchObservableQueries();
     expect(spy).toHaveBeenCalled();
-  });
-
-  it('should enable dev tools logging', () => {
-    const query = gql`
-      query people {
-        allPeople(first: 1) {
-          people {
-            name
-          }
-        }
-      }
-    `;
-
-    const data = {
-      allPeople: {
-        people: [
-          {
-            name: 'Luke Skywalker',
-          },
-        ],
-      },
-    };
-
-    // it('with self-made store', () => {
-    //   const link = mockSingleLink(reject, {
-    //     request: { query: cloneDeep(query) },
-    //     result: { data },
-    //   });
-    //
-    //   const client = new ApolloClient({
-    //     link,
-    //     cache: new InMemoryCache({ addTypename: false }),
-    //   });
-    //
-    //   const log: any[] = [];
-    //   client.__actionHookForDevTools((entry: any) => {
-    //     log.push(entry);
-    //   });
-    //
-    //   return client.query({ query }).then(() => {
-    //     expect(log.length).toBe(2);
-    //     expect(log[1].state.queries['0'].loading).toBe(false);
-    //   });
-    // });
   });
 
   itAsync('should propagate errors from network interface to observers', (resolve, reject) => {
@@ -2486,7 +2452,7 @@ describe('client', () => {
 
     handle.subscribe({
       error(error) {
-        expect(error.message).toBe('Network error: Uh oh!');
+        expect(error.message).toBe('Uh oh!');
         resolve();
       },
     });
@@ -2506,10 +2472,9 @@ describe('client', () => {
     const data = { allPeople: { people: [{ name: 'Luke Skywalker' }] } };
     const dataTwo = { allPeople: { people: [{ name: 'Princess Leia' }] } };
     const link = mockSingleLink(
-      reject,
       { request: { query }, result: { data } },
       { request: { query }, error: new Error('This is an error!') },
-      { request: { query }, result: { data: dataTwo } },
+      { request: { query }, result: { data: dataTwo } }
     );
     const client = new ApolloClient({
       link,
@@ -2580,9 +2545,9 @@ describe('client', () => {
           reject(e);
         }
       },
-      error(error) {
+      error(error: Error) {
         expect(count++).toBe(2);
-        expect(error.message).toBe('Network error: This is an error!');
+        expect(error.message).toBe('This is an error!');
 
         subscription.unsubscribe();
 
@@ -2619,15 +2584,12 @@ describe('client', () => {
       }
     `;
     const errors: GraphQLError[] = [
-      {
-        name: 'test',
-        message: 'Cannot query field "foo" on type "Post".',
-      },
+        new GraphQLError('Cannot query field "foo" on type "Post".')
     ];
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result: { errors },
-    });
+    }).setOnError(reject);
     const client = new ApolloClient({
       link,
       cache: new InMemoryCache(),
@@ -2635,7 +2597,7 @@ describe('client', () => {
 
     return client.query({ query }).catch(err => {
       expect(err.message).toBe(
-        'GraphQL error: Cannot query field "foo" on type "Post".',
+        'Cannot query field "foo" on type "Post".',
       );
     }).then(resolve, reject);
   });
@@ -2663,10 +2625,10 @@ describe('client', () => {
         ],
       },
     };
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query },
       result,
-    });
+    }).setOnError(reject);
     const client = new ApolloClient({
       link,
       cache: new InMemoryCache({
@@ -2675,9 +2637,13 @@ describe('client', () => {
       }),
     });
 
-    return withWarning(
-      () => client.query({ query }),
-      /Missing field description/,
+    return client.query({ query }).then(
+      result => {
+        fail("should have errored");
+      },
+      error => {
+        expect(error.message).toMatch(/Missing field 'description' /);
+      },
     ).then(resolve, reject);
   });
 
@@ -2708,10 +2674,10 @@ describe('client', () => {
       ],
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query: transformedQuery },
       result: { data: result },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -2750,10 +2716,10 @@ describe('client', () => {
       ],
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query: transformedQuery },
       result: { data: result },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -2802,10 +2768,10 @@ describe('client', () => {
       ],
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query: transformedQuery },
       result: { data: result },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -2846,10 +2812,10 @@ describe('@connection', () => {
       ],
     };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query: transformedQuery },
       result: { data: result },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -2891,10 +2857,10 @@ describe('@connection', () => {
 
     const variables = { order: 'popularity' };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query: transformedQuery, variables },
       result: { data: result },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -2935,10 +2901,10 @@ describe('@connection', () => {
 
     const variables = { order: 'popularity' };
 
-    const link = mockSingleLink(reject, {
+    const link = mockSingleLink({
       request: { query: transformedQuery, variables },
       result: { data: result },
-    });
+    }).setOnError(reject);
 
     const client = new ApolloClient({
       link,
@@ -2959,6 +2925,285 @@ describe('@connection', () => {
       expect(stripSymbols(actualResult.data)).toEqual(result);
       expect((client.cache as InMemoryCache).extract()).toMatchSnapshot();
     }).then(resolve, reject);
+  });
+
+  itAsync('should broadcast changes for reactive variables', async (resolve, reject) => {
+    const aVar = makeVar(123);
+    const bVar = makeVar("asdf");
+    const cache: InMemoryCache = new InMemoryCache({
+      typePolicies: {
+        Query: {
+          fields: {
+            a() {
+              return aVar();
+            },
+            b() {
+              return bVar();
+            },
+          },
+        },
+      },
+    });
+
+    const client = new ApolloClient({ cache });
+
+    const obsQueries = new Set<ObservableQuery<any>>();
+    const subs = new Set<ObservableSubscription>();
+    function watch(
+      query: DocumentNode,
+      fetchPolicy: WatchQueryFetchPolicy = "cache-first",
+    ): any[] {
+      const results: any[] = [];
+      const obsQuery = client.watchQuery({
+        query,
+        fetchPolicy,
+      });
+      obsQueries.add(obsQuery);
+      subs.add(obsQuery.subscribe({
+        next(result) {
+          results.push(result.data);
+        },
+      }));
+      return results;
+    }
+
+    const aResults = watch(gql`{ a }`);
+    const bResults = watch(gql`{ b }`);
+    const abResults = watch(gql`{ a b }`);
+
+    await wait();
+
+    function checkLastResult(
+      results: any[],
+      expectedData: Record<string, any>,
+    ) {
+      const lastResult = results[results.length - 1];
+      expect(lastResult).toEqual(expectedData);
+      return lastResult;
+    }
+
+    checkLastResult(aResults, { a: 123 });
+    const bAsdf = checkLastResult(bResults, { b: "asdf" });
+    checkLastResult(abResults, { a: 123, b: "asdf" });
+
+    aVar(aVar() + 111);
+    await wait();
+
+    const a234 = checkLastResult(aResults, { a: 234 });
+    expect(checkLastResult(bResults, { b: "asdf" })).toBe(bAsdf);
+    checkLastResult(abResults, { a: 234, b: "asdf" });
+
+    bVar(bVar().toUpperCase());
+    await wait();
+
+    expect(checkLastResult(aResults, { a: 234 })).toBe(a234);
+    checkLastResult(bResults, { b: "ASDF" });
+    checkLastResult(abResults, { a: 234, b: "ASDF" });
+
+    aVar(aVar() + 222);
+    bVar("oyez");
+    await wait();
+
+    const a456 = checkLastResult(aResults, { a: 456 });
+    const bOyez = checkLastResult(bResults, { b: "oyez" });
+    const a456bOyez = checkLastResult(abResults, { a: 456, b: "oyez" });
+
+    // Since the ObservableQuery skips results that are the same as the
+    // previous result, and nothing is actually changing about the
+    // ROOT_QUERY.a field, clear previous results to give the invalidated
+    // results a chance to be delivered.
+    obsQueries.forEach(obsQuery => obsQuery.resetLastResults());
+    await wait();
+    // Verify that resetting previous results did not trigger the delivery
+    // of any new results, by itself.
+    expect(checkLastResult(aResults, a456)).toBe(a456);
+    expect(checkLastResult(bResults, bOyez)).toBe(bOyez);
+    expect(checkLastResult(abResults, a456bOyez)).toBe(a456bOyez);
+
+    // Now invalidate the ROOT_QUERY.a field.
+    client.cache.evict({ fieldName: "a" });
+    await wait();
+
+    // The results are structurally the same, but the result objects have
+    // been recomputed for queries that involved the ROOT_QUERY.a field.
+    expect(checkLastResult(aResults, a456)).not.toBe(a456);
+    expect(checkLastResult(bResults, bOyez)).toBe(bOyez);
+    expect(checkLastResult(abResults, a456bOyez)).not.toBe(a456bOyez);
+
+    const cQuery = gql`{ c }`;
+    // Passing cache-only as the fetchPolicy allows the { c: "see" }
+    // result to be delivered even though networkStatus is still loading.
+    const cResults = watch(cQuery, "cache-only");
+
+    // Now try writing directly to the cache, rather than calling
+    // client.writeQuery.
+    client.cache.writeQuery({
+      query: cQuery,
+      data: {
+        c: "see",
+      },
+    });
+    await wait();
+
+    checkLastResult(aResults, a456);
+    checkLastResult(bResults, bOyez);
+    checkLastResult(abResults, a456bOyez);
+    checkLastResult(cResults, { c: "see" });
+
+    cache.modify({
+      fields: {
+        c(value) {
+          expect(value).toBe("see");
+          return "saw";
+        },
+      },
+    });
+    await wait();
+
+    checkLastResult(aResults, a456);
+    checkLastResult(bResults, bOyez);
+    checkLastResult(abResults, a456bOyez);
+    checkLastResult(cResults, { c: "saw" });
+
+    client.cache.evict({ fieldName: "c" });
+    await wait();
+
+    checkLastResult(aResults, a456);
+    checkLastResult(bResults, bOyez);
+    checkLastResult(abResults, a456bOyez);
+    expect(checkLastResult(cResults, {}));
+
+    expect(aResults).toEqual([
+      { a: 123 },
+      { a: 234 },
+      { a: 456 },
+      // Delivered again because we explicitly called resetLastResults.
+      { a: 456 },
+    ]);
+
+    expect(bResults).toEqual([
+      { b: "asdf" },
+      { b: "ASDF" },
+      { b: "oyez" },
+      // Delivered again because we explicitly called resetLastResults.
+      { b: "oyez" },
+    ]);
+
+    expect(abResults).toEqual([
+      { a: 123, b: "asdf" },
+      { a: 234, b: "asdf" },
+      { a: 234, b: "ASDF" },
+      { a: 456, b: "oyez" },
+      // Delivered again because we explicitly called resetLastResults.
+      { a: 456, b: "oyez" },
+    ]);
+
+    expect(cResults).toEqual([
+      {},
+      { c: "see" },
+      { c: "saw" },
+      {},
+    ]);
+
+    subs.forEach(sub => sub.unsubscribe());
+
+    resolve();
+  });
+
+  function wait(time = 10) {
+    return new Promise(resolve => setTimeout(resolve, time));
+  }
+
+  itAsync('should call forgetCache for reactive vars when stopped', async (resolve, reject) => {
+    const aVar = makeVar(123);
+    const bVar = makeVar("asdf");
+    const aSpy = jest.spyOn(aVar, "forgetCache");
+    const bSpy = jest.spyOn(bVar, "forgetCache");
+    const cache: InMemoryCache = new InMemoryCache({
+      typePolicies: {
+        Query: {
+          fields: {
+            a() {
+              return aVar();
+            },
+            b() {
+              return bVar();
+            },
+          },
+        },
+      },
+    });
+
+    const client = new ApolloClient({ cache });
+
+    const obsQueries = new Set<ObservableQuery<any>>();
+    const subs = new Set<ObservableSubscription>();
+    function watch(
+      query: DocumentNode,
+      fetchPolicy: WatchQueryFetchPolicy = "cache-first",
+    ): any[] {
+      const results: any[] = [];
+      const obsQuery = client.watchQuery({
+        query,
+        fetchPolicy,
+      });
+      obsQueries.add(obsQuery);
+      subs.add(obsQuery.subscribe({
+        next(result) {
+          results.push(result.data);
+        },
+      }));
+      return results;
+    }
+
+    const aQuery = gql`{ a }`;
+    const bQuery = gql`{ b }`;
+    const abQuery = gql`{ a b }`;
+
+    const aResults = watch(aQuery);
+    const bResults = watch(bQuery);
+
+    expect(cache["watches"].size).toBe(2);
+
+    expect(aResults).toEqual([]);
+    expect(bResults).toEqual([]);
+
+    expect(aSpy).not.toBeCalled();
+    expect(bSpy).not.toBeCalled();
+
+    subs.forEach(sub => sub.unsubscribe());
+
+    expect(aSpy).toBeCalledTimes(1);
+    expect(aSpy).toBeCalledWith(cache);
+    expect(bSpy).toBeCalledTimes(1);
+    expect(bSpy).toBeCalledWith(cache);
+
+    expect(aResults).toEqual([]);
+    expect(bResults).toEqual([]);
+
+    expect(cache["watches"].size).toBe(0);
+    const abResults = watch(abQuery);
+    expect(abResults).toEqual([]);
+    expect(cache["watches"].size).toBe(1);
+
+    await wait();
+
+    expect(aResults).toEqual([]);
+    expect(bResults).toEqual([]);
+    expect(abResults).toEqual([
+      { a: 123, b: "asdf" }
+    ]);
+
+    client.stop();
+
+    await wait();
+
+    expect(aSpy).toBeCalledTimes(2);
+    expect(aSpy).toBeCalledWith(cache);
+    expect(bSpy).toBeCalledTimes(2);
+    expect(bSpy).toBeCalledWith(cache);
+
+    resolve();
   });
 
   describe('default settings', () => {
@@ -2982,10 +3227,10 @@ describe('@connection', () => {
     };
 
     itAsync('allows setting default options for watchQuery', (resolve, reject) => {
-      const link = mockSingleLink(reject, {
+      const link = mockSingleLink({
         request: { query },
         result: { data: networkFetch },
-      });
+      }).setOnError(reject);
       const client = new ApolloClient({
         link,
         cache: new InMemoryCache({ addTypename: false }),
@@ -3001,7 +3246,12 @@ describe('@connection', () => {
         data: initialData,
       });
 
-      const obs = client.watchQuery({ query });
+      const obs = client.watchQuery({
+        query,
+        // This undefined value should be ignored in favor of
+        // defaultOptions.watchQuery.fetchPolicy.
+        fetchPolicy: void 0,
+      });
 
       subscribeAndCount(reject, obs, (handleCount, result) => {
         const resultData = stripSymbols(result.data);
@@ -3014,12 +3264,102 @@ describe('@connection', () => {
       });
     });
 
+    itAsync('allows setting nextFetchPolicy in defaultOptions', (resolve, reject) => {
+      let networkCounter = 0;
+      let nextFetchPolicyCallCount = 0;
+
+      const client = new ApolloClient({
+        link: new ApolloLink(operation => new Observable(observer => {
+          observer.next({
+            data: {
+              count: networkCounter++,
+            },
+          });
+          observer.complete();
+        })),
+
+        cache: new InMemoryCache,
+
+        defaultOptions: {
+          watchQuery: {
+            nextFetchPolicy(fetchPolicy) {
+              expect(++nextFetchPolicyCallCount).toBe(1);
+              expect(this.query).toBe(query);
+              expect(fetchPolicy).toBe("cache-first");
+              // Usually options.nextFetchPolicy applies only once, but a
+              // nextFetchPolicy function can set this.nextFetchPolicy
+              // again to perform an additional transition.
+              this.nextFetchPolicy = fetchPolicy => {
+                ++nextFetchPolicyCallCount;
+                expect(fetchPolicy).toBe("cache-and-network");
+                return "cache-first";
+              };
+              return "cache-and-network";
+            },
+          },
+        },
+      });
+
+      const query = gql`
+        query {
+          count
+        }
+      `;
+
+      client.writeQuery({
+        query,
+        data: {
+          count: "initial",
+        },
+      });
+
+      const obs = client.watchQuery({ query });
+
+      subscribeAndCount(reject, obs, (handleCount, result) => {
+        if (handleCount === 1) {
+          expect(nextFetchPolicyCallCount).toBe(1);
+          expect(result.data).toEqual({ count: "initial" });
+          // Refetching makes a copy of the current options, which
+          // includes options.nextFetchPolicy, so the inner
+          // nextFetchPolicy function ends up getting called twice.
+          obs.refetch();
+        } else if (handleCount === 2) {
+          expect(result.data).toEqual({ count: "initial" });
+          expect(nextFetchPolicyCallCount).toBe(2);
+        } else if (handleCount === 3) {
+          expect(result.data).toEqual({ count: 0 });
+          expect(nextFetchPolicyCallCount).toBe(2);
+          client.writeQuery({
+            query,
+            data: {
+              count: "secondary",
+            },
+          });
+        } else if (handleCount === 4) {
+          expect(result.data).toEqual({ count: "secondary" });
+          expect(nextFetchPolicyCallCount).toBe(3);
+        } else if (handleCount === 5) {
+          expect(result.data).toEqual({ count: 1 });
+          expect(nextFetchPolicyCallCount).toBe(3);
+          client.cache.evict({ fieldName: "count" });
+        } else if (handleCount === 6) {
+          expect(result.data).toEqual({ count: 2 });
+          expect(nextFetchPolicyCallCount).toBe(3);
+          expect(obs.options.fetchPolicy).toBe("cache-first");
+          expect(obs.options.nextFetchPolicy).toBeUndefined();
+          setTimeout(resolve, 50);
+        } else {
+          reject("too many results");
+        }
+      });
+    });
+
     itAsync('allows setting default options for query', (resolve, reject) => {
       const errors = [{ message: 'failure', name: 'failure' }];
-      const link = mockSingleLink(reject, {
+      const link = mockSingleLink({
         request: { query },
         result: { errors },
-      });
+      }).setOnError(reject);
       const client = new ApolloClient({
         link,
         cache: new InMemoryCache({ addTypename: false }),
@@ -3046,10 +3386,10 @@ describe('@connection', () => {
         upvote: { success: true },
       };
 
-      const link = mockSingleLink(reject, {
+      const link = mockSingleLink({
         request: { query: mutation, variables: { id: 1 } },
         result: { data },
-      });
+      }).setOnError(reject);
 
       const client = new ApolloClient({
         link,
@@ -3059,7 +3399,12 @@ describe('@connection', () => {
         },
       });
 
-      return client.mutate({ mutation }).then(result => {
+      return client.mutate({
+        mutation,
+        // This undefined value should be ignored in favor of
+        // defaultOptions.mutate.variables.
+        variables: void 0,
+      }).then(result => {
         expect(result.data).toEqual(data);
       }).then(resolve, reject);
     });
@@ -3074,10 +3419,10 @@ function clientRoundtrip(
   variables?: any,
   possibleTypes?: PossibleTypesMap,
 ) {
-  const link = mockSingleLink(reject, {
+  const link = mockSingleLink({
     request: { query: cloneDeep(query) },
     result: data,
-  });
+  }).setOnError(reject);
 
   const client = new ApolloClient({
     link,

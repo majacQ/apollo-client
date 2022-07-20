@@ -11,52 +11,56 @@ module.exports = {
         subtitle: 'Client (React)',
         description: 'A guide to using the Apollo GraphQL Client with React',
         githubRepo: 'apollographql/apollo-client',
-        defaultVersion: 3.0,
-        /*
+        defaultVersion: '3',
         versions: {
-          2.6: 'version-2.6',
-          2.5: 'version-2.5',
-          2.4: 'version-2.4',
+          '2': 'version-2.6',
         },
-        */
         checkLinksOptions: {
           exceptions: [
-            '/api/core/',
-            '/v2.4/api/core/',
-            '/v2.5/api/core/',
-            '/v2.6/api/core/',
-            '/v3.0/api/core/'
+            '/api/core/ApolloClient/',
+            '/v2/api/apollo-client/',
           ],
-        },
-        typescriptApiBox: {
-          data: require('./docs.json'),
-          filepathPrefix: 'src/',
         },
         sidebarCategories: {
           null: [
             'index',
             'why-apollo',
             'get-started',
+            '[Changelog](https://github.com/apollographql/apollo-client/blob/main/CHANGELOG.md)',
           ],
-          'Fetching data': [
+          'Fetching': [
             'data/queries',
             'data/mutations',
-            'data/local-state',
             'data/subscriptions',
-            'data/pagination',
             'data/fragments',
             'data/error-handling',
           ],
-          'Caching': [
+          Caching: [
             'caching/cache-configuration',
             'caching/cache-interaction',
+            'caching/garbage-collection',
+            'caching/cache-field-behavior',
+            'caching/advanced-topics'
+          ],
+          Pagination: [
+            'pagination/overview',
+            'pagination/core-api',
+            'pagination/offset-based',
+            'pagination/cursor-based',
+            'pagination/key-args'
+          ],
+          'Local State': [
+            'local-state/local-state-management',
+            'local-state/managing-state-with-field-policies',
+            'local-state/reactive-variables',
+            'local-state/client-side-schema',
+            'local-state/local-resolvers'
           ],
           'Development & Testing': [
             'development-testing/static-typing',
             'development-testing/testing',
             'development-testing/client-schema-mocking',
             'development-testing/developer-tooling',
-            'development-testing/recompose',
           ],
           Performance: [
             'performance/performance',
@@ -67,25 +71,42 @@ module.exports = {
           Integrations: [
             'integrations/integrations',
             'integrations/react-native',
-            'integrations/meteor',
             'integrations/webpack',
           ],
           Networking: [
-            'networking/network-layer',
+            'networking/basic-http-networking',
+            'networking/advanced-http-networking',
             'networking/authentication',
           ],
-          'Apollo Client API': [
-            'api/core',
-            'api/react-hooks',
-            'api/react-testing',
-            'api/react-ssr',
-            'api/react-components',
-            'api/react-hoc'
-          ],
           Migrating: [
-            'migrating/hooks-migration',
-            'migrating/boost-migration',
-          ]
+            'migrating/apollo-client-3-migration',
+            'migrating/hooks-migration'
+          ],
+          'API - Core': [
+            'api/core/ApolloClient',
+            'api/core/ObservableQuery'
+          ],
+          'API - Cache': [
+            'api/cache/InMemoryCache'
+          ],
+          'API - React': [
+            'api/react/hooks',
+            'api/react/testing',
+            'api/react/ssr',
+            'api/react/components',
+            'api/react/hoc'
+          ],
+          'API - Link': [
+            'api/link/introduction',
+            'api/link/apollo-link-batch-http',
+            'api/link/apollo-link-context',
+            'api/link/apollo-link-error',
+            'api/link/apollo-link-rest',
+            'api/link/apollo-link-retry',
+            'api/link/apollo-link-schema',
+            'api/link/apollo-link-ws',
+            'api/link/persisted-queries'
+          ],
         },
       },
     },

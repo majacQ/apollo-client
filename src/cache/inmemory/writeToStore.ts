@@ -1,72 +1,63 @@
 import { SelectionSetNode, FieldNode, DocumentNode } from 'graphql';
 import { invariant, InvariantError } from 'ts-invariant';
+import { equal } from '@wry/equality';
 
 import {
   createFragmentMap,
   FragmentMap,
   getFragmentFromSelection,
-} from '../../utilities/graphql/fragments';
-
-import {
   getDefaultValues,
   getFragmentDefinitions,
   getOperationDefinition,
-} from '../../utilities/graphql/getFromAST';
-
-import {
   getTypenameFromResult,
   makeReference,
-  isReference,
   isField,
   resultKeyNameFromField,
   StoreValue,
-} from '../../utilities/graphql/storeUtils';
+  StoreObject,
+  Reference,
+  isReference,
+  shouldInclude,
+  hasDirectives,
+  cloneDeep,
+} from '../../utilities';
 
-import {
-  DeepMerger,
-  ReconcilerFunction,
-} from '../../utilities/common/mergeDeep';
+import { NormalizedCache, ReadMergeModifyContext, MergeTree } from './types';
+import { makeProcessedFieldsMerger, fieldNameFromStoreName, storeValueIsStoreObject } from './helpers';
+import { StoreReader } from './readFromStore';
+import { InMemoryCache } from './inMemoryCache';
+import { EntityStore } from './entityStore';
 
-import { shouldInclude } from '../../utilities/graphql/directives';
-import { cloneDeep } from '../../utilities/common/cloneDeep';
-
-import { defaultNormalizedCacheFactory } from './entityCache';
-import { NormalizedCache, StoreObject } from './types';
-import { getTypenameFromStoreObject } from './helpers';
-import { Policies, StoreValueMergeFunction } from './policies';
-
-export type WriteContext = {
-  readonly store: NormalizedCache;
+export interface WriteContext extends ReadMergeModifyContext {
   readonly written: {
     [dataId: string]: SelectionSetNode[];
   };
-  readonly mergeFields: StoreObjectMergeFunction;
-  readonly mergeStoreObjects: StoreObjectMergeFunction;
-  readonly variables?: any;
   readonly fragmentMap?: FragmentMap;
+  // General-purpose deep-merge function for use during writes.
+  merge<T>(existing: T, incoming: T): T;
 };
 
-type StoreObjectMergeFunction = (
-  existing: StoreObject,
-  incoming: StoreObject,
-  overrides?: MergeOverrides,
-) => StoreObject;
+interface ProcessSelectionSetOptions {
+  dataId?: string,
+  result: Record<string, any>;
+  selectionSet: SelectionSetNode;
+  context: WriteContext;
+  mergeTree: MergeTree;
+}
 
-type MergeOverrides = Record<string, {
-  merge?: StoreValueMergeFunction;
-  child?: MergeOverrides;
-}>;
-
-export interface StoreWriterConfig {
-  policies: Policies;
-};
+export interface WriteToStoreOptions {
+  query: DocumentNode;
+  result: Object;
+  dataId?: string;
+  store: NormalizedCache;
+  variables?: Object;
+}
 
 export class StoreWriter {
-  private policies: Policies;
-
-  constructor(config: StoreWriterConfig) {
-    this.policies = config.policies;
-  }
+  constructor(
+    public readonly cache: InMemoryCache,
+    private reader?: StoreReader,
+  ) {}
 
   /**
    * Writes the result of a query to the store.
@@ -79,191 +70,177 @@ export class StoreWriter {
    *
    * @param variables A map from the name of a variable to its value. These variables can be
    * referenced by the query document.
+   *
+   * @return A `Reference` to the written object.
    */
-  public writeQueryToStore({
+  public writeToStore({
     query,
     result,
-    dataId = 'ROOT_QUERY',
-    store = defaultNormalizedCacheFactory(),
+    dataId,
+    store,
     variables,
-  }: {
-    query: DocumentNode;
-    result: Object;
-    dataId?: string;
-    store?: NormalizedCache;
-    variables?: Object;
-  }): NormalizedCache {
+  }: WriteToStoreOptions): Reference | undefined {
     const operationDefinition = getOperationDefinition(query)!;
+    const merger = makeProcessedFieldsMerger();
 
-    // Any IDs written explicitly to the cache (including ROOT_QUERY, most
-    // frequently) will be retained as reachable root IDs on behalf of their
-    // owner DocumentNode objects, until/unless evicted for all owners.
-    store.retain(dataId);
+    variables = {
+      ...getDefaultValues(operationDefinition),
+      ...variables,
+    };
 
-    // A DeepMerger that merges arrays and objects structurally, but otherwise
-    // prefers incoming scalar values over existing values. Used to accumulate
-    // fields when processing a single selection set.
-    const simpleFieldsMerger = new DeepMerger;
-
-    // A DeepMerger used for updating normalized StoreObjects in the store,
-    // with special awareness of { __ref } objects, arrays, and custom logic
-    // for reading and writing field values.
-    const storeObjectMerger = new DeepMerger(storeObjectReconciler);
-
-    return this.writeSelectionSetToStore({
+    const ref = this.processSelectionSet({
       result: result || Object.create(null),
       dataId,
       selectionSet: operationDefinition.selectionSet,
+      mergeTree: { map: new Map },
       context: {
         store,
         written: Object.create(null),
-        mergeFields(existing, incoming) {
-          return simpleFieldsMerger.merge(existing, incoming);
+        merge<T>(existing: T, incoming: T) {
+          return merger.merge(existing, incoming) as T;
         },
-        mergeStoreObjects(existing, incoming, overrides) {
-          return storeObjectMerger.merge(existing, incoming, store, overrides);
-        },
-        variables: {
-          ...getDefaultValues(operationDefinition),
-          ...variables,
-        },
+        variables,
+        varString: JSON.stringify(variables),
         fragmentMap: createFragmentMap(getFragmentDefinitions(query)),
       },
     });
+
+    if (!isReference(ref)) {
+      throw new InvariantError(`Could not identify object ${JSON.stringify(result)}`);
+    }
+
+    // Any IDs written explicitly to the cache will be retained as
+    // reachable root IDs for garbage collection purposes. Although this
+    // logic includes root IDs like ROOT_QUERY and ROOT_MUTATION, their
+    // retainment counts are effectively ignored because cache.gc() always
+    // includes them in its root ID set.
+    store.retain(ref.__ref);
+
+    return ref;
   }
 
-  private writeSelectionSetToStore({
+  private processSelectionSet({
     dataId,
     result,
     selectionSet,
     context,
-  }: {
-    dataId: string;
-    result: Record<string, any>;
-    selectionSet: SelectionSetNode;
-    context: WriteContext;
-  }): NormalizedCache {
-    const { store, written } = context;
+    // This object allows processSelectionSet to report useful information
+    // to its callers without explicitly returning that information.
+    mergeTree,
+  }: ProcessSelectionSetOptions): StoreObject | Reference {
+    const { policies } = this.cache;
 
-    // Avoid processing the same entity object using the same selection set
-    // more than once. We use an array instead of a Set since most entity IDs
-    // will be written using only one selection set, so the size of this array
-    // is likely to be very small, meaning indexOf is likely to be faster than
-    // Set.prototype.has.
-    const sets = written[dataId] || (written[dataId] = []);
-    if (sets.indexOf(selectionSet) >= 0) return store;
-    sets.push(selectionSet);
+    // Identify the result object, even if dataId was already provided,
+    // since we always need keyObject below.
+    const [id, keyObject] = policies.identify(
+      result, selectionSet, context.fragmentMap);
 
-    const processed = this.processSelectionSet({
-      result,
-      selectionSet,
-      context,
-      typename: this.policies.rootTypenamesById[dataId],
-    });
+    // If dataId was not provided, fall back to the id just generated by
+    // policies.identify.
+    dataId = dataId || id;
 
-    const existing: StoreObject = store.get(dataId) || Object.create(null);
+    if ("string" === typeof dataId) {
+      // Avoid processing the same entity object using the same selection
+      // set more than once. We use an array instead of a Set since most
+      // entity IDs will be written using only one selection set, so the
+      // size of this array is likely to be very small, meaning indexOf is
+      // likely to be faster than Set.prototype.has.
+      const sets = context.written[dataId] || (context.written[dataId] = []);
+      const ref = makeReference(dataId);
+      if (sets.indexOf(selectionSet) >= 0) return ref;
+      sets.push(selectionSet);
 
-    if (processed.mergeOverrides) {
-      // If processSelectionSet reported any custom merge functions, walk
-      // the processed.mergeOverrides structure and preemptively merge
-      // incoming values with (possibly non-existent) existing values
-      // using the custom function. This function updates processed.result
-      // in place with the custom-merged values.
-      walkWithMergeOverrides(
-        existing,
-        processed.result,
-        processed.mergeOverrides,
-      );
-    }
-
-    store.set(
-      dataId,
-      context.mergeStoreObjects(
-        existing,
-        processed.result,
-        // To avoid re-merging values that have already been merged by
-        // custom merge functions, give context.mergeStoreObjects access
-        // to the mergeOverrides information that was used above.
-        processed.mergeOverrides,
-      ),
-    );
-
-    return store;
-  }
-
-  private processSelectionSet({
-    result,
-    selectionSet,
-    context,
-    mergeOverrides,
-    typename = getTypenameFromResult(
-      result, selectionSet, context.fragmentMap),
-  }: {
-    result: Record<string, any>;
-    selectionSet: SelectionSetNode;
-    context: WriteContext;
-    mergeOverrides?: MergeOverrides;
-    typename?: string;
-  }): {
-    result: StoreObject;
-    mergeOverrides?: MergeOverrides;
-  } {
-    let mergedFields: StoreObject = Object.create(null);
-    if (typeof typename === "string") {
-      mergedFields.__typename = typename;
-    }
-
-    selectionSet.selections.forEach(selection => {
-      if (!shouldInclude(selection, context.variables)) {
-        return;
+      // If we're about to write a result object into the store, but we
+      // happen to know that the exact same (===) result object would be
+      // returned if we were to reread the result with the same inputs,
+      // then we can skip the rest of the processSelectionSet work for
+      // this object, and immediately return a Reference to it.
+      if (this.reader && this.reader.isFresh(
+        result,
+        ref,
+        selectionSet,
+        context,
+      )) {
+        return ref;
       }
+    }
+
+    // This variable will be repeatedly updated using context.merge to
+    // accumulate all fields that need to be written into the store.
+    let incomingFields: StoreObject = Object.create(null);
+
+    // Write any key fields that were used during identification, even if
+    // they were not mentioned in the original query.
+    if (keyObject) {
+      incomingFields = context.merge(incomingFields, keyObject);
+    }
+
+    // If typename was not passed in, infer it. Note that typename is
+    // always passed in for tricky-to-infer cases such as "Query" for
+    // ROOT_QUERY.
+    const typename =
+      (dataId && policies.rootTypenamesById[dataId]) ||
+      getTypenameFromResult(result, selectionSet, context.fragmentMap) ||
+      (dataId && context.store.get(dataId, "__typename") as string);
+
+    if ("string" === typeof typename) {
+      incomingFields.__typename = typename;
+    }
+
+    const workSet = new Set(selectionSet.selections);
+
+    workSet.forEach(selection => {
+      if (!shouldInclude(selection, context.variables)) return;
 
       if (isField(selection)) {
         const resultFieldKey = resultKeyNameFromField(selection);
         const value = result[resultFieldKey];
 
         if (typeof value !== 'undefined') {
-          const storeFieldName = this.policies.getStoreFieldName(
+          const storeFieldName = policies.getStoreFieldName({
             typename,
-            selection,
-            context.variables,
+            fieldName: selection.name.value,
+            field: selection,
+            variables: context.variables,
+          });
+
+          const childTree = getChildMergeTree(mergeTree, storeFieldName);
+
+          let incomingValue =
+            this.processFieldValue(value, selection, context, childTree);
+
+          const childTypename = selection.selectionSet
+            && context.store.getFieldValue<string>(incomingValue as StoreObject, "__typename")
+            || void 0;
+
+          const merge = policies.getMergeFunction(
+            typename,
+            selection.name.value,
+            childTypename,
           );
 
-          const processed = this.processFieldValue(value, selection, context);
-
-          const merge = this.policies.getFieldMergeFunction(
-            typename,
-            selection,
-            context.variables,
-          );
-
-          if (merge || processed.mergeOverrides) {
-            mergeOverrides = mergeOverrides || Object.create(null);
-            mergeOverrides[storeFieldName] = context.mergeFields(
-              mergeOverrides[storeFieldName],
-              { merge, child: processed.mergeOverrides },
-            ) as MergeOverrides[string];
+          if (merge) {
+            childTree.info = {
+              // TODO Check compatibility against any existing
+              // childTree.field?
+              field: selection,
+              typename,
+              merge,
+            };
+          } else {
+            maybeRecycleChildMergeTree(mergeTree, storeFieldName);
           }
 
-          mergedFields = context.mergeFields(mergedFields, {
-            [storeFieldName]: processed.result,
+          incomingFields = context.merge(incomingFields, {
+            [storeFieldName]: incomingValue,
           });
 
         } else if (
-          this.policies.usingPossibleTypes &&
-          !(
-            selection.directives &&
-            selection.directives.some(
-              ({ name }) =>
-                name && (name.value === 'defer' || name.value === 'client'),
-            )
-          )
+          policies.usingPossibleTypes &&
+          !hasDirectives(["defer", "client"], selection)
         ) {
-          // XXX We'd like to throw an error, but for backwards compatibility's sake
-          // we just print a warning for the time being.
-          //throw new WriteError(`Missing field ${resultFieldKey} in ${JSON.stringify(result, null, 2).substring(0, 100)}`);
-          invariant.warn(
-            `Missing field ${resultFieldKey} in ${JSON.stringify(
+          throw new InvariantError(
+            `Missing field '${resultFieldKey}' in ${JSON.stringify(
               result,
               null,
               2,
@@ -277,193 +254,304 @@ export class StoreWriter {
           context.fragmentMap,
         );
 
-        if (this.policies.fragmentMatches(fragment, typename)) {
-          mergedFields = context.mergeFields(
-            mergedFields,
-            this.processSelectionSet({
-              result,
-              selectionSet: fragment.selectionSet,
-              context,
-              mergeOverrides,
-              typename,
-            }).result,
-          );
+        if (fragment &&
+            // By passing result and context.variables, we enable
+            // policies.fragmentMatches to bend the rules when typename is
+            // not a known subtype of the fragment type condition, but the
+            // result object contains all the keys requested by the
+            // fragment, which strongly suggests the fragment probably
+            // matched. This fuzzy matching behavior must be enabled by
+            // including a regular expression string (such as ".*" or
+            // "Prefix.*" or ".*Suffix") in the possibleTypes array for
+            // specific supertypes; otherwise, all matching remains exact.
+            // Fuzzy matches are remembered by the Policies object and
+            // later used when reading from the cache. Since there is no
+            // incoming result object to check when reading, reading does
+            // not involve the same fuzzy inference, so the StoreReader
+            // class calls policies.fragmentMatches without passing result
+            // or context.variables. The flexibility of fuzzy matching
+            // allows existing clients to accommodate previously unknown
+            // __typename strings produced by server/schema changes, which
+            // would otherwise be breaking changes.
+            policies.fragmentMatches(fragment, typename, result, context.variables)) {
+          fragment.selectionSet.selections.forEach(workSet.add, workSet);
         }
       }
     });
 
-    return {
-      result: mergedFields,
-      mergeOverrides,
-    };
+    if ("string" === typeof dataId) {
+      const entityRef = makeReference(dataId);
+
+      if (mergeTree.map.size) {
+        incomingFields = this.applyMerges(mergeTree, entityRef, incomingFields, context);
+      }
+
+      if (process.env.NODE_ENV !== "production") {
+        const hasSelectionSet = (storeFieldName: string) =>
+          fieldsWithSelectionSets.has(fieldNameFromStoreName(storeFieldName));
+        const fieldsWithSelectionSets = new Set<string>();
+        workSet.forEach(selection => {
+          if (isField(selection) && selection.selectionSet) {
+            fieldsWithSelectionSets.add(selection.name.value);
+          }
+        });
+
+        const hasMergeFunction = (storeFieldName: string) => {
+          const childTree = mergeTree.map.get(storeFieldName);
+          return Boolean(childTree && childTree.info && childTree.info.merge);
+        };
+
+        Object.keys(incomingFields).forEach(storeFieldName => {
+          // If a merge function was defined for this field, trust that it
+          // did the right thing about (not) clobbering data. If the field
+          // has no selection set, it's a scalar field, so it doesn't need
+          // a merge function (even if it's an object, like JSON data).
+          if (hasSelectionSet(storeFieldName) &&
+              !hasMergeFunction(storeFieldName)) {
+            warnAboutDataLoss(
+              entityRef,
+              incomingFields,
+              storeFieldName,
+              context.store,
+            );
+          }
+        });
+      }
+
+      context.store.merge(dataId, incomingFields);
+
+      return entityRef;
+    }
+
+    return incomingFields;
   }
 
   private processFieldValue(
     value: any,
     field: FieldNode,
     context: WriteContext,
-  ): {
-    result: StoreValue;
-    mergeOverrides?: MergeOverrides;
-  } {
+    mergeTree: MergeTree,
+  ): StoreValue {
     if (!field.selectionSet || value === null) {
       // In development, we need to clone scalar values so that they can be
       // safely frozen with maybeDeepFreeze in readFromStore.ts. In production,
       // it's cheaper to store the scalar values directly in the cache.
-      return {
-        result: process.env.NODE_ENV === 'production' ? value : cloneDeep(value),
-      };
+      return process.env.NODE_ENV === 'production' ? value : cloneDeep(value);
     }
 
     if (Array.isArray(value)) {
-      let overrides: Record<number, MergeOverrides>;
-      const result = value.map((item, i) => {
-        const { result, mergeOverrides } =
-          this.processFieldValue(item, field, context);
-        if (mergeOverrides) {
-          overrides = overrides || [];
-          overrides[i] = mergeOverrides;
-        }
-        return result;
+      return value.map((item, i) => {
+        const value = this.processFieldValue(
+          item, field, context, getChildMergeTree(mergeTree, i));
+        maybeRecycleChildMergeTree(mergeTree, i);
+        return value;
       });
-      return { result, mergeOverrides: overrides };
-    }
-
-    if (value) {
-      const dataId = this.policies.identify(
-        value,
-        // Since value is a result object rather than a normalized StoreObject,
-        // we need to consider aliases when computing its key fields.
-        field.selectionSet,
-        context.fragmentMap,
-      );
-
-      if (typeof dataId === 'string') {
-        this.writeSelectionSetToStore({
-          dataId,
-          result: value,
-          selectionSet: field.selectionSet,
-          context,
-        });
-        return { result: makeReference(dataId) };
-      }
     }
 
     return this.processSelectionSet({
       result: value,
       selectionSet: field.selectionSet,
       context,
+      mergeTree,
     });
   }
-}
 
-function walkWithMergeOverrides(
-  existingObject: StoreObject,
-  incomingObject: StoreObject,
-  overrides: MergeOverrides,
-): void {
-  Object.keys(overrides).forEach(name => {
-    const { merge, child } = overrides[name];
-    const existingValue: any = existingObject && existingObject[name];
-    const incomingValue: any = incomingObject && incomingObject[name];
-    if (child) {
-      // StoreObjects can have multiple layers of child objects/arrays,
-      // each layer with its own child fields and override functions.
-      walkWithMergeOverrides(existingValue, incomingValue, child);
+  private applyMerges<T extends StoreValue>(
+    mergeTree: MergeTree,
+    existing: StoreValue,
+    incoming: T,
+    context: ReadMergeModifyContext,
+    getStorageArgs?: Parameters<EntityStore["getStorage"]>,
+  ): T {
+    if (mergeTree.map.size && !isReference(incoming)) {
+      const e: StoreObject | Reference | undefined = (
+        // Items in the same position in different arrays are not
+        // necessarily related to each other, so when incoming is an array
+        // we process its elements as if there was no existing data.
+        !Array.isArray(incoming) &&
+        // Likewise, existing must be either a Reference or a StoreObject
+        // in order for its fields to be safe to merge with the fields of
+        // the incoming object.
+        (isReference(existing) || storeValueIsStoreObject(existing))
+      ) ? existing : void 0;
+
+      // This narrowing is implied by mergeTree.map.size > 0 and
+      // !isReference(incoming), though TypeScript understandably cannot
+      // hope to infer this type.
+      const i = incoming as StoreObject | StoreValue[];
+
+      // The options.storage objects provided to read and merge functions
+      // are derived from the identity of the parent object plus a
+      // sequence of storeFieldName strings/numbers identifying the nested
+      // field name path of each field value to be merged.
+      if (e && !getStorageArgs) {
+        getStorageArgs = [isReference(e) ? e.__ref : e];
+      }
+
+      // It's possible that applying merge functions to this subtree will
+      // not change the incoming data, so this variable tracks the fields
+      // that did change, so we can create a new incoming object when (and
+      // only when) at least one incoming field has changed. We use a Map
+      // to preserve the type of numeric keys.
+      let changedFields: Map<string | number, StoreValue> | undefined;
+
+      const getValue = (
+        from: typeof e | typeof i,
+        name: string | number,
+      ): StoreValue => {
+        return Array.isArray(from)
+          ? (typeof name === "number" ? from[name] : void 0)
+          : context.store.getFieldValue(from, String(name))
+      };
+
+      mergeTree.map.forEach((childTree, storeFieldName) => {
+        if (getStorageArgs) {
+          getStorageArgs.push(storeFieldName);
+        }
+        const eVal = getValue(e, storeFieldName);
+        const iVal = getValue(i, storeFieldName);
+        const aVal = this.applyMerges(
+          childTree,
+          eVal,
+          iVal,
+          context,
+          getStorageArgs,
+        );
+        if (aVal !== iVal) {
+          changedFields = changedFields || new Map;
+          changedFields.set(storeFieldName, aVal);
+        }
+        if (getStorageArgs) {
+          invariant(getStorageArgs.pop() === storeFieldName);
+        }
+      });
+
+      if (changedFields) {
+        // Shallow clone i so we can add changed fields to it.
+        incoming = (Array.isArray(i) ? i.slice(0) : { ...i }) as T;
+        changedFields.forEach((value, name) => {
+          (incoming as any)[name] = value;
+        });
+      }
     }
-    if (merge) {
-      incomingObject[name] = merge(existingValue, incomingValue, existingObject);
+
+    if (mergeTree.info) {
+      return this.cache.policies.runMergeFunction(
+        existing,
+        incoming,
+        mergeTree.info,
+        context,
+        getStorageArgs && context.store.getStorage(...getStorageArgs),
+      );
     }
-  });
-}
 
-const storeObjectReconciler: ReconcilerFunction<[
-  NormalizedCache,
-  MergeOverrides | undefined,
-]> = function (
-  existingObject,
-  incomingObject,
-  property,
-  // This parameter comes from the additional argument we pass to the
-  // merge method in context.mergeStoreObjects (see writeQueryToStore).
-  store,
-  mergeOverrides,
-) {
-  // In the future, reconciliation logic may depend on the type of the parent
-  // StoreObject, not just the values of the given property.
-  const existing = existingObject[property];
-  const incoming = incomingObject[property];
-
-  const mergeChildObj = mergeOverrides && mergeOverrides[property];
-  if (mergeChildObj && typeof mergeChildObj.merge === "function") {
-    // If this property was overridden by a custom merge function, then
-    // its merged value has already been determined, so we should return
-    // incoming without recursively merging it into existing.
     return incoming;
   }
+}
 
-  if (
-    existing !== incoming &&
-    // The DeepMerger class has various helpful utilities that we might as
-    // well reuse here.
-    this.isObject(existing) &&
-    this.isObject(incoming)
-  ) {
-    const eType = getTypenameFromStoreObject(store, existing);
-    const iType = getTypenameFromStoreObject(store, incoming);
-    // If both objects have a typename and the typename is different, let the
-    // incoming object win. The typename can change when a different subtype
-    // of a union or interface is written to the cache.
-    if (
-      typeof eType === 'string' &&
-      typeof iType === 'string' &&
-      eType !== iType
-    ) {
-      return incoming;
-    }
+const emptyMergeTreePool: MergeTree[] = [];
 
-    const childMergeOverrides = mergeChildObj && mergeChildObj.child;
+function getChildMergeTree(
+  { map }: MergeTree,
+  name: string | number,
+): MergeTree {
+  if (!map.has(name)) {
+    map.set(name, emptyMergeTreePool.pop() || { map: new Map });
+  }
+  return map.get(name)!;
+}
 
-    if (isReference(incoming)) {
-      if (isReference(existing)) {
-        // Incoming references always replace existing references, but we can
-        // avoid changing the object identity when the __ref is the same.
-        return incoming.__ref === existing.__ref ? existing : incoming;
-      }
-      // Incoming references can be merged with existing non-reference data
-      // if the existing data appears to be of a compatible type.
-      store.set(
-        incoming.__ref,
-        this.merge(
-          existing,
-          store.get(incoming.__ref),
-          store,
-          childMergeOverrides,
-        ),
-      );
-      return incoming;
-    } else if (isReference(existing)) {
-      throw new InvariantError(
-        `Store error: the application attempted to write an object with no provided id but the store already contains an id of ${existing.__ref} for this object.`,
-      );
-    }
+function maybeRecycleChildMergeTree(
+  { map }: MergeTree,
+  name: string | number,
+) {
+  const childTree = map.get(name);
+  if (childTree &&
+      !childTree.info &&
+      !childTree.map.size) {
+    emptyMergeTreePool.push(childTree);
+    map.delete(name);
+  }
+}
 
-    if (Array.isArray(incoming)) {
-      if (!Array.isArray(existing)) return incoming;
-      if (existing.length > incoming.length) {
-        // Allow the incoming array to truncate the existing array, if the
-        // incoming array is shorter.
-        return this.merge(
-          existing.slice(0, incoming.length),
-          incoming,
-          store,
-          childMergeOverrides,
-        );
-      }
-    }
+const warnings = new Set<string>();
 
-    return this.merge(existing, incoming, store, childMergeOverrides);
+// Note that this function is unused in production, and thus should be
+// pruned by any well-configured minifier.
+function warnAboutDataLoss(
+  existingRef: Reference,
+  incomingObj: StoreObject,
+  storeFieldName: string,
+  store: NormalizedCache,
+) {
+  const getChild = (objOrRef: StoreObject | Reference): StoreObject | false => {
+    const child = store.getFieldValue<StoreObject>(objOrRef, storeFieldName);
+    return typeof child === "object" && child;
+  };
+
+  const existing = getChild(existingRef);
+  if (!existing) return;
+
+  const incoming = getChild(incomingObj);
+  if (!incoming) return;
+
+  // It's always safe to replace a reference, since it refers to data
+  // safely stored elsewhere.
+  if (isReference(existing)) return;
+
+  // If the values are structurally equivalent, we do not need to worry
+  // about incoming replacing existing.
+  if (equal(existing, incoming)) return;
+
+  // If we're replacing every key of the existing object, then the
+  // existing data would be overwritten even if the objects were
+  // normalized, so warning would not be helpful here.
+  if (Object.keys(existing).every(
+    key => store.getFieldValue(incoming, key) !== void 0)) {
+    return;
   }
 
-  return incoming;
+  const parentType =
+    store.getFieldValue<string>(existingRef, "__typename") ||
+    store.getFieldValue<string>(incomingObj, "__typename");
+  const fieldName = fieldNameFromStoreName(storeFieldName);
+  const typeDotName = `${parentType}.${fieldName}`;
+  // Avoid warning more than once for the same type and field name.
+  if (warnings.has(typeDotName)) return;
+  warnings.add(typeDotName);
+
+  const childTypenames: string[] = [];
+  // Arrays do not have __typename fields, and always need a custom merge
+  // function, even if their elements are normalized entities.
+  if (!Array.isArray(existing) &&
+      !Array.isArray(incoming)) {
+    [existing, incoming].forEach(child => {
+      const typename = store.getFieldValue(child, "__typename");
+      if (typeof typename === "string" &&
+          !childTypenames.includes(typename)) {
+        childTypenames.push(typename);
+      }
+    });
+  }
+
+  invariant.warn(
+`Cache data may be lost when replacing the ${fieldName} field of a ${parentType} object.
+
+To address this problem (which is not a bug in Apollo Client), ${
+  childTypenames.length
+    ? "either ensure all objects of type " +
+        childTypenames.join(" and ") + " have an ID or a custom merge function, or "
+    : ""
+}define a custom merge function for the ${
+  typeDotName
+} field, so InMemoryCache can safely merge these objects:
+
+  existing: ${JSON.stringify(existing).slice(0, 1000)}
+  incoming: ${JSON.stringify(incoming).slice(0, 1000)}
+
+For more information about these options, please refer to the documentation:
+
+  * Ensuring entity objects have IDs: https://go.apollo.dev/c/generating-unique-identifiers
+  * Defining custom merge functions: https://go.apollo.dev/c/merging-non-normalized-objects
+`);
 }

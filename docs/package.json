@@ -1,19 +1,21 @@
 {
   "scripts": {
-    "prestart": "rm -rf .cache",
+    "prestart": "gatsby clean",
     "start": "gatsby develop",
     "build": "gatsby build",
     "serve": "gatsby serve",
-    "types": "cd .. && typedoc --json ./docs/docs.json --ignoreCompilerErrors ./src/index.ts"
+    "types": "cd .. && typedoc --json ./docs/src/gatsby-theme-apollo-docs/docs.json --ignoreCompilerErrors ./src/index.ts"
   },
   "dependencies": {
-    "gatsby": "2.15.21",
-    "gatsby-theme-apollo-docs": "2.1.5",
-    "react": "16.9.0",
-    "react-dom": "16.9.0"
+    "gatsby": "2.27.4",
+    "gatsby-theme-apollo-docs": "4.5.11",
+    "ink": "^2.7.1",
+    "react": "17.0.1",
+    "react-dom": "17.0.1",
+    "webpack-virtual-modules": "^0.2.2"
   },
   "devDependencies": {
-    "typedoc": "0.15.0",
-    "typescript": "3.6.3"
+    "typedoc": "0.15.8",
+    "typescript": "3.9.6"
   }
 }

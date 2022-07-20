@@ -1,15 +1,12 @@
 import gql from 'graphql-tag';
-import { DocumentNode, GraphQLError } from 'graphql';
-import { introspectionQuery } from 'graphql/utilities';
+import { DocumentNode, GraphQLError, getIntrospectionQuery } from 'graphql';
 
-import { Observable } from '../../utilities/observables/Observable';
-import { ApolloLink } from '../../link/core/ApolloLink';
-import { Operation } from '../../link/core/types';
-import { ApolloClient } from '../..';
-import { ApolloCache } from '../../cache/core/cache';
-import { InMemoryCache } from '../../cache/inmemory/inMemoryCache';
-import { hasDirectives } from '../../utilities/graphql/directives';
-import { itAsync } from '../utils/itAsync';
+import { Observable } from '../../utilities';
+import { ApolloLink } from '../../link/core';
+import { Operation } from '../../link/core';
+import { ApolloClient } from '../../core';
+import { ApolloCache, InMemoryCache } from '../../cache';
+import { itAsync } from '../../testing';
 
 describe('General functionality', () => {
   it('should not impact normal non-@client use', () => {
@@ -35,43 +32,9 @@ describe('General functionality', () => {
     });
   });
 
-  // TODO The functionality tested here should be removed (along with the test)
-  // once apollo-link-state is fully deprecated.
-  it('should strip @client fields only if client resolvers specified', async () => {
-    const query = gql`
-      {
-        field @client
-      }
-    `;
-
-    const client = new ApolloClient({
-      cache: new InMemoryCache(),
-      link: new ApolloLink(operation => {
-        expect(hasDirectives(['client'], operation.query)).toBe(true);
-        return Observable.of({ data: { field: 'local' } });
-      }),
-    });
-
-    const { warn } = console;
-    const messages: string[] = [];
-    console.warn = (message: string) => messages.push(message);
-    try {
-      const result = await client.query({ query });
-      expect(result.data).toEqual({ field: 'local' });
-      expect(messages).toEqual([
-        'Found @client directives in a query but no ApolloClient resolvers ' +
-        'were specified. This means ApolloClient local resolver handling ' +
-        'has been disabled, and @client directives will be passed through ' +
-        'to your link chain.',
-      ]);
-    } finally {
-      console.warn = warn;
-    }
-  });
-
   it('should not interfere with server introspection queries', () => {
     const query = gql`
-      ${introspectionQuery}
+      ${getIntrospectionQuery()}
     `;
 
     const error = new GraphQLError('no introspection result found');
@@ -456,7 +419,6 @@ describe('Cache manipulation', () => {
           },
           loading: false,
           networkStatus: 7,
-          stale: false,
         });
 
         if (selectedItemId !== 123) {
@@ -470,6 +432,99 @@ describe('Cache manipulation', () => {
             ],
           });
         } else {
+          resolve();
+        }
+      },
+    });
+  });
+
+  itAsync("should rerun @client(always: true) fields on entity update", (resolve, reject) => {
+    const query = gql`
+      query GetClientData($id: ID) {
+        clientEntity(id: $id) @client(always: true) {
+          id
+          title
+          titleLength @client(always: true)
+        }
+      }
+    `;
+
+    const mutation = gql`
+      mutation AddOrUpdate {
+        addOrUpdate(id: $id, title: $title) @client
+      }
+    `;
+
+    const fragment = gql`
+    fragment ClientDataFragment on ClientData {
+      id
+      title
+    }
+    `
+    const client = new ApolloClient({
+      cache: new InMemoryCache(),
+      link: new ApolloLink(() => Observable.of({ data: { } })),
+      resolvers: {
+        ClientData: {
+          titleLength(data) {
+            return data.title.length
+          }
+        },
+        Query: {
+          clientEntity(_root, {id}, {cache}) {
+            return cache.readFragment({
+              id: cache.identify({id, __typename: "ClientData"}),
+              fragment,
+            });
+          },
+        },
+        Mutation: {
+          addOrUpdate(_root, {id, title}, {cache}) {
+            return cache.writeFragment({
+              id: cache.identify({id, __typename: "ClientData"}),
+              fragment,
+              data: {id, title, __typename: "ClientData"},
+            });
+          },
+        }
+      },
+    });
+
+    const entityId = 1;
+    const shortTitle = "Short";
+    const longerTitle = "A little longer";
+    client.mutate({
+      mutation,
+      variables: {
+        id: entityId,
+        title: shortTitle,
+      },
+    });
+    let mutated = false;
+    client.watchQuery({ query, variables: {id: entityId}}).subscribe({
+      next(result) {
+        if (!mutated) {
+          expect(result.data.clientEntity).toEqual({
+            id: entityId,
+            title: shortTitle,
+            titleLength: shortTitle.length,
+            __typename: "ClientData",
+          });
+          client.mutate({
+            mutation,
+            variables: {
+              id: entityId,
+              title: longerTitle,
+            }
+          });
+          mutated = true;
+        } else if (mutated) {
+          expect(result.data.clientEntity).toEqual({
+            id: entityId,
+            title: longerTitle,
+            titleLength: longerTitle.length,
+            __typename: "ClientData",
+          });
           resolve();
         }
       },
@@ -850,7 +905,8 @@ describe('Combining client and server state/operations', () => {
       resolvers: {},
     });
 
-    cache.writeData({
+    cache.writeQuery({
+      query,
       data: {
         count: 0,
       },
@@ -864,7 +920,7 @@ describe('Combining client and server state/operations', () => {
     });
   });
 
-  itAsync('should support nested quering of both server and client fields', (resolve, reject) => {
+  itAsync('should support nested querying of both server and client fields', (resolve, reject) => {
     const query = gql`
       query GetUser {
         user {
@@ -878,7 +934,17 @@ describe('Combining client and server state/operations', () => {
     const link = new ApolloLink(operation => {
       expect(operation.operationName).toBe('GetUser');
       return Observable.of({
-        data: { user: { lastName: 'Doe', __typename: 'User' } },
+        data: {
+          user: {
+            __typename: 'User',
+            // We need an id (or a keyFields policy) because, if the User
+            // object is not identifiable, the call to cache.writeQuery
+            // below will simply replace the existing data rather than
+            // merging the new data with the existing data.
+            id: 123,
+            lastName: 'Doe',
+          },
+        },
       });
     });
 
@@ -888,17 +954,19 @@ describe('Combining client and server state/operations', () => {
       resolvers: {},
     });
 
-    cache.writeData({
+    cache.writeQuery({
+      query,
       data: {
         user: {
           __typename: 'User',
+          id: 123,
           firstName: 'John',
         },
       },
     });
 
     client.watchQuery({ query }).subscribe({
-      next: ({ data }: any) => {
+      next({ data }: any) {
         const { user } = data;
         try {
           expect(user).toMatchObject({
@@ -973,14 +1041,18 @@ describe('Combining client and server state/operations', () => {
           incrementCount: (_, __, { cache }) => {
             const { count } = cache.readQuery({ query: counterQuery });
             const data = { count: count + 1 };
-            cache.writeData({ data });
+            cache.writeQuery({
+              query: counterQuery,
+              data,
+            });
             return null;
           },
         },
       },
     });
 
-    cache.writeData({
+    cache.writeQuery({
+      query: counterQuery,
       data: {
         count: 0,
       },

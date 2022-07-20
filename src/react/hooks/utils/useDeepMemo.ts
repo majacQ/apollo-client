@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { equal as isEqual } from '@wry/equality';
+import { equal } from '@wry/equality';
 
 /**
  * Memoize a result using deep equality. This hook has two advantages over
@@ -14,7 +14,7 @@ export function useDeepMemo<TKey, TValue>(
 ): TValue {
   const ref = useRef<{ key: TKey; value: TValue }>();
 
-  if (!ref.current || !isEqual(key, ref.current.key)) {
+  if (!ref.current || !equal(key, ref.current.key)) {
     ref.current = { key, value: memoFn() };
   }
 

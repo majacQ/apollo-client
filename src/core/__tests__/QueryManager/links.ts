@@ -2,16 +2,16 @@
 import gql from 'graphql-tag';
 
 import { Observable } from '../../../utilities/observables/Observable';
-import { ApolloLink } from '../../../link/core/ApolloLink';
+import { ApolloLink } from '../../../link/core';
 import { InMemoryCache } from '../../../cache/inmemory/inMemoryCache';
-import { stripSymbols } from '../../../__tests__/utils/stripSymbols';
+import { stripSymbols } from '../../../utilities/testing/stripSymbols';
 
 // mocks
-import { MockSubscriptionLink } from '../../../__mocks__/mockLinks';
+import { MockSubscriptionLink } from '../../../utilities/testing/mocking/mockSubscriptionLink';
 
 // core
 import { QueryManager } from '../../QueryManager';
-import { Reference } from '../../../utilities/graphql/storeUtils';
+import { NextLink, Operation, Reference } from '../../../core';
 
 describe('Link interactions', () => {
   it('includes the cache on the context for eviction links', done => {
@@ -33,7 +33,7 @@ describe('Link interactions', () => {
       },
     };
 
-    const evictionLink = (operation, forward) => {
+    const evictionLink = (operation: Operation, forward: NextLink) => {
       const { cache } = operation.getContext();
       expect(cache).toBeDefined();
       return forward(operation).map(result => {
@@ -105,7 +105,7 @@ describe('Link interactions', () => {
     });
 
     let count = 0;
-    let four;
+    let four: ZenObservable.Subscription;
     // first watch
     const one = observable.subscribe(result => count++);
     // second watch
@@ -176,14 +176,13 @@ describe('Link interactions', () => {
     });
 
     let count = 0;
-    let four;
-    let finished = false;
+    let four: ZenObservable.Subscription;
     // first watch
     const one = observable.subscribe(result => count++);
     // second watch
-    const two = observable.subscribe({
-      next: result => count++,
-      error: e => {
+    observable.subscribe({
+      next: () => count++,
+      error: () => {
         count = 0;
       },
     });
@@ -213,7 +212,6 @@ describe('Link interactions', () => {
 
     link.onUnsubscribe(() => {
       expect(count).toEqual(4);
-      finished = true;
     });
   });
   it('includes the cache on the context for mutations', done => {
@@ -235,7 +233,7 @@ describe('Link interactions', () => {
       },
     };
 
-    const evictionLink = (operation, forward) => {
+    const evictionLink = (operation: Operation, forward: NextLink) => {
       const { cache } = operation.getContext();
       expect(cache).toBeDefined();
       done();
@@ -273,7 +271,7 @@ describe('Link interactions', () => {
       },
     };
 
-    const evictionLink = (operation, forward) => {
+    const evictionLink = (operation: Operation, forward: NextLink) => {
       const { planet } = operation.getContext();
       expect(planet).toBe('Tatooine');
       done();
@@ -330,10 +328,25 @@ describe('Link interactions', () => {
         typePolicies: {
           Query: {
             fields: {
+  <<<<<<< read-merge-toReference-helper
               book(_, { parentObject: rootQuery, args, toReference }) {
                 const ref = toReference({ __typename: "Book", id: args.id });
                 expect(ref).toEqual({ __ref: `Book:${args.id}` });
                 const found = (rootQuery.books as Reference[]).find(
+  =======
+              book(_, { args, toReference, readField }) {
+                if (!args){
+                  throw new Error('arg must never be null');
+                }
+
+                const ref = toReference({ __typename: "Book", id: args.id });
+                if (!ref){
+                  throw new Error('ref must never be null');
+                }
+
+                expect(ref).toEqual({ __ref: `Book:${args.id}` });
+                const found = readField<Reference[]>("books")!.find(
+  >>>>>>> refactor-broadcastQueries-pipeline
                   book => book.__ref === ref.__ref);
                 expect(found).toBeTruthy();
                 return found;
@@ -349,9 +362,7 @@ describe('Link interactions', () => {
     return queryManager
       .query({ query: shouldHitCacheResolver })
       .then(({ data }) => {
-        expect({
-          ...data,
-        }).toMatchObject({
+        expect(data).toMatchObject({
           book: { title: 'Woo', __typename: 'Book' },
         });
       });

@@ -65,7 +65,7 @@ describe('optimistic cache layers', () => {
     expect(result1984).toBe(readOptimistic(cache));
     expect(result1984).toBe(readRealistic(cache));
 
-    let result2666InTransaction: ReturnType<typeof readOptimistic>;
+    let result2666InTransaction: ReturnType<typeof readOptimistic> | null = null;
     cache.performTransaction(proxy => {
       expect(readOptimistic(cache)).toEqual(result1984);
 
@@ -101,7 +101,7 @@ describe('optimistic cache layers', () => {
 
     expect(result1984).toBe(readRealistic(cache));
 
-    let resultCatch22: ReturnType<typeof readOptimistic>;
+    let resultCatch22: ReturnType<typeof readOptimistic> | null = null;
     cache.performTransaction(proxy => {
       proxy.writeQuery({
         query,
@@ -118,7 +118,8 @@ describe('optimistic cache layers', () => {
         },
       });
 
-      expect((resultCatch22 = readOptimistic(proxy))).toEqual({
+      resultCatch22 = readOptimistic(proxy);
+      expect(resultCatch22).toEqual({
         book: {
           __typename: 'Book',
           title: 'Catch-22',
@@ -273,7 +274,7 @@ describe('optimistic cache layers', () => {
     });
 
     function read() {
-      return cache.readQuery<Q>({ query }, true);
+      return cache.readQuery<Q>({ query }, true)!;
     }
 
     const result = read();
@@ -313,9 +314,9 @@ describe('optimistic cache layers', () => {
     // because the original query did not ask for author information.
     const resultWithSpinlessAuthor = read();
     expect(resultWithSpinlessAuthor).toEqual(result);
-    expect(resultWithSpinlessAuthor).not.toBe(result);
+    expect(resultWithSpinlessAuthor).toBe(result);
     expect(resultWithSpinlessAuthor.books[0]).toBe(result.books[0]);
-    expect(resultWithSpinlessAuthor.books[1]).not.toBe(result.books[1]);
+    expect(resultWithSpinlessAuthor.books[1]).toBe(result.books[1]);
 
     cache.recordOptimisticTransaction(proxy => {
       proxy.writeFragment({
@@ -344,7 +345,7 @@ describe('optimistic cache layers', () => {
     function readWithAuthors(optimistic = true) {
       return cache.readQuery<Q>({
         query: queryWithAuthors,
-      }, optimistic);
+      }, optimistic)!;
     }
 
     function withoutISBN(data: any) {
@@ -426,17 +427,14 @@ describe('optimistic cache layers', () => {
     cache.removeOptimistic('buzz book');
     const spinelessAfterRemovingBuzz = readSpinelessFragment();
     expect(spinelessBeforeRemovingBuzz).toEqual(spinelessAfterRemovingBuzz);
-    expect(spinelessBeforeRemovingBuzz).not.toBe(spinelessAfterRemovingBuzz);
-    expect(spinelessBeforeRemovingBuzz.author).not.toBe(
-      spinelessAfterRemovingBuzz.author,
-    );
+    expect(spinelessBeforeRemovingBuzz).toBe(spinelessAfterRemovingBuzz);
 
     const resultAfterRemovingBuzzLayer = readWithAuthors();
     expect(resultAfterRemovingBuzzLayer).toEqual(resultWithBuzz);
     expect(resultAfterRemovingBuzzLayer).not.toBe(resultWithBuzz);
     resultWithTwoAuthors.books.forEach((book, i) => {
       expect(book).toEqual(resultAfterRemovingBuzzLayer.books[i]);
-      expect(book).not.toBe(resultAfterRemovingBuzzLayer.books[i]);
+      expect(book).toBe(resultAfterRemovingBuzzLayer.books[i]);
     });
 
     const nonOptimisticResult = readWithAuthors(false);

@@ -151,13 +151,13 @@ There's nothing special about the naming of `VoteButtons.fragments.entry` or `Re
 
 ### Importing fragments when using Webpack
 
-When loading `.graphql` files with [graphql-tag/loader](https://github.com/apollographql/graphql-tag/blob/master/loader.js), we can include fragments using `import` statements. For example:
+When loading `.graphql` files with [graphql-tag/loader](https://github.com/apollographql/graphql-tag/blob/main/loader.js), we can include fragments using `import` statements. For example:
 
 ```graphql
 #import "./someFragment.graphql"
 ```
 
-This makes the contents of `someFragment.graphql` available to the current file. See the [Webpack Fragments](/integrations/webpack/#fragments) section for additional details.
+This makes the contents of `someFragment.graphql` available to the current file. See the [Webpack Fragments](../integrations/webpack/#fragments) section for additional details.
 
 ## Using fragments with unions and interfaces
 
@@ -166,7 +166,7 @@ You can define fragments on [unions and interfaces](https://www.apollographql.co
 Here's an example of a query that includes three in-line fragments:
 
 ```graphql
-query {
+query AllCharacters {
   all_characters {
 
     ... on Character {
@@ -208,14 +208,14 @@ const cache = new InMemoryCache({
 
 This example lists three interfaces (`Character`, `Test`, and `Snake`) and the object types that implement them.
 
-If your schema includes only a few unions and interfaces, you can probably specify your `possibleTypes` manually without issue. However, as your schema grows in size and complexity, you should consider [generating `possibleTypes` automatically from your schema](#generating-possibletypes-manually).
+If your schema includes only a few unions and interfaces, you can probably specify your `possibleTypes` manually without issue. However, as your schema grows in size and complexity, you should consider [generating `possibleTypes` automatically from your schema](#generating-possibletypes-automatically).
 
 ### Generating `possibleTypes` automatically
 
 The following example script translates a GraphQL introspection query into a `possibleTypes` configuration object:
 
 ```js
-const fetch = require('node-fetch');
+const fetch = require('cross-fetch');
 const fs = require('fs');
 
 fetch(`${YOUR_API_HOST}/graphql`, {

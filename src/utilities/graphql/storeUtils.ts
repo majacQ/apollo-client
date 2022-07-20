@@ -30,7 +30,7 @@ export function makeReference(id: string): Reference {
 }
 
 export function isReference(obj: any): obj is Reference {
-  return obj && typeof obj === 'object' && typeof obj.__ref === 'string';
+  return Boolean(obj && typeof obj === 'object' && typeof obj.__ref === 'string');
 }
 
 export type StoreValue =
@@ -44,16 +44,9 @@ export type StoreValue =
   | void
   | Object;
 
-export type ScalarValue = StringValueNode | BooleanValueNode | EnumValueNode;
-
-export function isScalarValue(value: ValueNode): value is ScalarValue {
-  return ['StringValue', 'BooleanValue', 'EnumValue'].indexOf(value.kind) > -1;
-}
-
-export type NumberValue = IntValueNode | FloatValueNode;
-
-export function isNumberValue(value: ValueNode): value is NumberValue {
-  return ['IntValue', 'FloatValue'].indexOf(value.kind) > -1;
+export interface StoreObject {
+  __typename?: string;
+  [storeFieldName: string]: StoreValue;
 }
 
 function isStringValue(value: ValueNode): value is StringValueNode {
@@ -186,10 +179,11 @@ const KNOWN_DIRECTIVES: string[] = [
 
 export function getStoreKeyName(
   fieldName: string,
-  args?: Object,
+  args?: Record<string, any> | null,
   directives?: Directives,
 ): string {
   if (
+    args &&
     directives &&
     directives['connection'] &&
     directives['connection']['key']
@@ -203,10 +197,9 @@ export function getStoreKeyName(
         : [];
       filterKeys.sort();
 
-      const queryArgs = args as { [key: string]: any };
       const filteredArgs = {} as { [key: string]: any };
       filterKeys.forEach(key => {
-        filteredArgs[key] = queryArgs[key];
+        filteredArgs[key] = args[key];
       });
 
       return `${directives['connection']['key']}(${JSON.stringify(
@@ -243,8 +236,8 @@ export function getStoreKeyName(
 
 export function argumentsObjectFromField(
   field: FieldNode | DirectiveNode,
-  variables: Object,
-): Object {
+  variables?: Record<string, any>,
+): Object | null {
   if (field.arguments && field.arguments.length) {
     const argObj: Object = {};
     field.arguments.forEach(({ name, value }) =>
@@ -252,7 +245,6 @@ export function argumentsObjectFromField(
     );
     return argObj;
   }
-
   return null;
 }
 
@@ -263,8 +255,12 @@ export function resultKeyNameFromField(field: FieldNode): string {
 export function getTypenameFromResult(
   result: Record<string, any>,
   selectionSet: SelectionSetNode,
-  fragmentMap: FragmentMap,
+  fragmentMap?: FragmentMap,
 ): string | undefined {
+  if (typeof result.__typename === 'string') {
+    return result.__typename;
+  }
+
   for (const selection of selectionSet.selections) {
     if (isField(selection)) {
       if (selection.name.value === '__typename') {
@@ -273,17 +269,13 @@ export function getTypenameFromResult(
     } else {
       const typename = getTypenameFromResult(
         result,
-        getFragmentFromSelection(selection, fragmentMap).selectionSet,
+        getFragmentFromSelection(selection, fragmentMap)!.selectionSet,
         fragmentMap,
       );
       if (typeof typename === 'string') {
         return typename;
       }
     }
-  }
-  // TODO Move this first?
-  if (typeof result.__typename === 'string') {
-    return result.__typename;
   }
 }
 
@@ -297,38 +289,4 @@ export function isInlineFragment(
   return selection.kind === 'InlineFragment';
 }
 
-function defaultValueFromVariable(node: VariableNode) {
-  throw new InvariantError(`Variable nodes are not supported by valueFromNode`);
-}
-
 export type VariableValue = (node: VariableNode) => any;
-
-/**
- * Evaluate a ValueNode and yield its value in its natural JS form.
- */
-export function valueFromNode(
-  node: ValueNode,
-  onVariable: VariableValue = defaultValueFromVariable,
-): any {
-  switch (node.kind) {
-    case 'Variable':
-      return onVariable(node);
-    case 'NullValue':
-      return null;
-    case 'IntValue':
-      return parseInt(node.value, 10);
-    case 'FloatValue':
-      return parseFloat(node.value);
-    case 'ListValue':
-      return node.values.map(v => valueFromNode(v, onVariable));
-    case 'ObjectValue': {
-      const value: { [key: string]: any } = {};
-      for (const field of node.fields) {
-        value[field.name.value] = valueFromNode(field.value, onVariable);
-      }
-      return value;
-    }
-    default:
-      return node.value;
-  }
-}

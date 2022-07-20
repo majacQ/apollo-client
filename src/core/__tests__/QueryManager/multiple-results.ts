@@ -1,13 +1,16 @@
 // externals
 import gql from 'graphql-tag';
 import { InMemoryCache } from '../../../cache/inmemory/inMemoryCache';
-import { stripSymbols } from '../../../__tests__/utils/stripSymbols';
+import { stripSymbols } from '../../../utilities/testing/stripSymbols';
 
 // mocks
-import { MockSubscriptionLink } from '../../../__mocks__/mockLinks';
+import {
+  MockSubscriptionLink
+} from '../../../utilities/testing/mocking/mockSubscriptionLink';
 
 // core
 import { QueryManager } from '../../QueryManager';
+import { GraphQLError } from 'graphql';
 
 describe('mutiple results', () => {
   it('allows multiple query results from link', done => {
@@ -114,7 +117,7 @@ describe('mutiple results', () => {
         if (count === 1) {
           // this shouldn't fire the next event again
           link.simulateResult({
-            result: { errors: [new Error('defer failed')] },
+            result: { errors: [new GraphQLError('defer failed')] },
           });
           setTimeout(() => {
             link.simulateResult({ result: { data: laterData } });
@@ -185,7 +188,7 @@ describe('mutiple results', () => {
           expect(stripSymbols(result.data)).toEqual(initialData);
           // this should fire the `next` event without this error
           link.simulateResult({
-            result: { errors: [new Error('defer failed')], data: laterData },
+            result: { errors: [new GraphQLError('defer failed')], data: laterData },
           });
         }
         if (count === 2) {
@@ -255,7 +258,7 @@ describe('mutiple results', () => {
             expect(result.errors).toBeUndefined();
             // this should fire the next event again
             link.simulateResult({
-              result: { errors: [new Error('defer failed')] },
+              error: new Error('defer failed'),
             });
           }
           if (count === 2) {
@@ -301,13 +304,6 @@ describe('mutiple results', () => {
       },
     };
 
-    const laterData = {
-      people_one: {
-        // XXX true defer's wouldn't send this
-        name: 'Luke Skywalker',
-        friends: [{ name: 'Leia Skywalker' }],
-      },
-    };
     const link = new MockSubscriptionLink();
     const queryManager = new QueryManager({
       cache: new InMemoryCache({ addTypename: false }),
@@ -329,7 +325,7 @@ describe('mutiple results', () => {
           expect(result.errors).toBeUndefined();
           // this should fire the next event again
           link.simulateResult({
-            result: { errors: [new Error('defer failed')] },
+            error: new Error('defer failed'),
           });
         }
         if (count === 2) {
